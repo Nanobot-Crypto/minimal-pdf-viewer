@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Vela — visor de PDF y Markdown</title>
+  </head>
+  <body>
+    <div id="app">
+      <header id="topbar">
+        <div class="topbar-left">
+          <button id="btn-sidebar" class="icon-btn" title="Panel lateral (Ctrl+B)" aria-label="Panel lateral"></button>
+          <button id="btn-open" class="icon-btn" title="Abrir documento (Ctrl+O)" aria-label="Abrir documento"></button>
+        </div>
+        <div id="tabstrip" role="tablist" aria-label="Documentos abiertos"></div>
+        <div class="topbar-right">
+          <button id="btn-palette" class="icon-btn" title="Paleta de comandos (Ctrl+K)" aria-label="Paleta de comandos"></button>
+          <button id="btn-theme" class="icon-btn" title="Cambiar tema" aria-label="Cambiar tema"></button>
+        </div>
+      </header>
+      <div id="main">
+        <aside id="sidebar" aria-label="Panel lateral">
+          <nav id="sidebar-tabs" class="seg" role="group" aria-label="Secciones del panel lateral"></nav>
+          <div id="sidebar-body"></div>
+        </aside>
+        <section id="content" aria-live="polite"></section>
+      </div>
+      <footer id="statusbar">
+        <span id="status-left"></span>
+        <span id="status-right"></span>
+      </footer>
+    </div>
+    <div id="drop-overlay" hidden>Suelta para abrir el documento</div>
+    <div id="palette-overlay" hidden></div>
+    <div id="menu-layer"></div>
+    <div id="dialog-layer"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.ts-out/
+.cache/
+openclaw/
+src-tauri/target/
+src-tauri/gen/
+test-results/
+playwright-report/
+*.log

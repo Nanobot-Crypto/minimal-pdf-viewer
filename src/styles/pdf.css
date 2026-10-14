@@ -1,0 +1,185 @@
+/* Vela — visor PDF */
+
+.doc {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.doc-pdf {
+  position: relative;
+}
+
+.pdf-viewer-container {
+  /* pdf.js exige posicionamiento absoluto en su contenedor. */
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+  background: var(--bg-sunken);
+  outline: none;
+}
+
+/* Páginas: limpias, sin marcos decorativos */
+.pdfViewer .page {
+  margin: 12px auto !important;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.16);
+  border: none !important;
+  border-radius: 2px;
+}
+
+html[data-theme='dark'] .pdfViewer .page {
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.55);
+}
+
+/* Capa de texto: selección y enlaces */
+.pdfViewer .textLayer {
+  opacity: 1;
+}
+
+.pdfViewer .textLayer ::selection {
+  background: rgba(11, 87, 208, 0.3);
+}
+
+html[data-theme='dark'] .pdfViewer .textLayer ::selection {
+  background: rgba(138, 180, 255, 0.35);
+}
+
+.pdfViewer .textLayer .highlight {
+  background-color: rgba(255, 214, 0, 0.42);
+}
+
+html[data-theme='dark'] .pdfViewer .textLayer .highlight {
+  background-color: rgba(255, 214, 0, 0.35);
+}
+
+.pdfViewer .textLayer .highlight.selected {
+  background-color: rgba(255, 150, 50, 0.55);
+}
+
+/* Enlaces internos discretos */
+.pdfViewer .linkAnnotation > a {
+  outline: none;
+}
+
+/* Barra de controles flotante (aparece al mover el ratón) */
+.pdf-toolbar {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%) translateY(6px);
+  z-index: 15;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  padding: 4px 6px;
+  opacity: 0;
+  transition: opacity 140ms ease, transform 140ms ease;
+  pointer-events: none;
+}
+
+.pdf-toolbar.visible {
+  opacity: 1;
+  transform: translateX(-50%);
+  pointer-events: auto;
+}
+
+.pdf-toolbar[hidden] {
+  display: none;
+}
+
+.pdf-toolbar-sep {
+  width: 1px;
+  height: 18px;
+  background: var(--border);
+  margin: 0 3px;
+}
+
+.pdf-toolbar-pageinput {
+  width: 38px;
+  height: 24px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: inherit;
+  font-size: 12px;
+  text-align: center;
+  padding: 0;
+}
+
+.pdf-toolbar-pageinput:focus {
+  outline: 2px solid var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.pdf-toolbar-total {
+  color: var(--fg-muted);
+  font-size: 11.5px;
+  min-width: 32px;
+}
+
+.pdf-toolbar-zoomlabel {
+  width: auto;
+  min-width: 44px;
+  padding: 0 6px;
+  font-size: 11.5px;
+}
+
+/* Barra de búsqueda flotante */
+.findbar {
+  position: absolute;
+  top: 10px;
+  right: 14px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  box-shadow: var(--shadow);
+  padding: 5px 6px;
+}
+
+.findbar[hidden] {
+  display: none;
+}
+
+.findbar-input {
+  width: 200px;
+  height: 26px;
+  border: none;
+  background: transparent;
+  color: var(--fg);
+  font-family: inherit;
+  font-size: 12.5px;
+  padding: 0 6px;
+  outline: none;
+}
+
+.findbar-count {
+  font-size: 11px;
+  color: var(--fg-muted);
+  min-width: 52px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.findbar-count.find-empty {
+  color: var(--danger);
+}
+
+.findbar .icon-btn {
+  width: 24px;
+  height: 24px;
+}
+
+.findbar .icon-btn .icon {
+  width: 13px;
+  height: 13px;
+}
