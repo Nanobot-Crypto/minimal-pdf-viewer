@@ -35,6 +35,11 @@ export const icons = {
   more: `<svg ${S}><circle cx="3.5" cy="8" r=".9" fill="currentColor" stroke="none"/><circle cx="8" cy="8" r=".9" fill="currentColor" stroke="none"/><circle cx="12.5" cy="8" r=".9" fill="currentColor" stroke="none"/></svg>`,
   lock: `<svg ${S}><rect x="3.5" y="7" width="9" height="6.5" rx="1"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/></svg>`,
   export: `<svg ${S}><path d="M8 10V2.5M5.5 5L8 2.5 10.5 5"/><path d="M3 9.5v3h10v-3"/></svg>`,
+  // Controles de ventana (estilo GNOME/Adwaita).
+  winMin: `<svg ${S}><path d="M4 8h8"/></svg>`,
+  winMax: `<svg ${S}><rect x="4" y="4" width="8" height="8" rx="1"/></svg>`,
+  winRestore: `<svg ${S}><rect x="3.5" y="5.5" width="7" height="7" rx="1"/><path d="M6 5.5V4.5a1 1 0 0 1 1-1h4.5a1 1 0 0 1 1 1V9a1 1 0 0 1-1 1h-1"/></svg>`,
+  winClose: `<svg ${S}><path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/></svg>`,
 };
 
 export function icon(name: keyof typeof icons): SVGElement {

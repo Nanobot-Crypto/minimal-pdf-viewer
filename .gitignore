@@ -2,7 +2,7 @@ node_modules/
 dist/
 .ts-out/
 .cache/
-openclaw/
+.openclaw/
 src-tauri/target/
 src-tauri/gen/
 test-results/

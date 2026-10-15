@@ -46,6 +46,11 @@ html[data-theme='dark'] {
   box-sizing: border-box;
 }
 
+/* El atributo hidden debe ganar siempre a las reglas de display. */
+[hidden] {
+  display: none !important;
+}
+
 html,
 body {
   height: 100%;
@@ -1000,4 +1005,217 @@ body {
     height: calc(100vh - var(--topbar-h) - var(--statusbar-h));
     box-shadow: var(--shadow);
   }
+}
+
+/* ==============================================================
+   Barra de título integrada (ventana sin decoración, estilo GNOME)
+   ============================================================== */
+
+#topbar {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+#window-controls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 8px;
+  padding-left: 8px;
+  border-left: 1px solid var(--border);
+}
+
+.win-btn {
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--fg);
+  opacity: 0.8;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: default;
+  padding: 0;
+}
+
+.win-btn:hover {
+  opacity: 1;
+  background: var(--bg-sunken);
+}
+
+.win-btn:active {
+  background: var(--rule);
+}
+
+/* Cierre estilo Adwaita: se vuelve rojo al pasar el ratón. */
+.win-close:hover {
+  background: #e01b24;
+  color: #fff;
+  opacity: 1;
+}
+
+.win-close:active {
+  background: #c01018;
+}
+
+html[data-theme='dark'] .win-close:hover {
+  background: #e6483e;
+}
+
+/* Bordes y esquinas de redimensionado (la ventana no tiene decoración). */
+.resize-handle {
+  position: fixed;
+  z-index: 9999;
+}
+
+.resize-handle[data-resize='North'] {
+  top: 0;
+  left: 10px;
+  right: 10px;
+  height: 6px;
+  cursor: n-resize;
+}
+
+.resize-handle[data-resize='South'] {
+  bottom: 0;
+  left: 10px;
+  right: 10px;
+  height: 6px;
+  cursor: s-resize;
+}
+
+.resize-handle[data-resize='East'] {
+  top: 10px;
+  right: 0;
+  bottom: 10px;
+  width: 6px;
+  cursor: e-resize;
+}
+
+.resize-handle[data-resize='West'] {
+  top: 10px;
+  left: 0;
+  bottom: 10px;
+  width: 6px;
+  cursor: w-resize;
+}
+
+.resize-handle[data-resize='NorthEast'] {
+  top: 0;
+  right: 0;
+  width: 12px;
+  height: 12px;
+  cursor: ne-resize;
+}
+
+.resize-handle[data-resize='NorthWest'] {
+  top: 0;
+  left: 0;
+  width: 12px;
+  height: 12px;
+  cursor: nw-resize;
+}
+
+.resize-handle[data-resize='SouthEast'] {
+  bottom: 0;
+  right: 0;
+  width: 12px;
+  height: 12px;
+  cursor: se-resize;
+}
+
+.resize-handle[data-resize='SouthWest'] {
+  bottom: 0;
+  left: 0;
+  width: 12px;
+  height: 12px;
+  cursor: sw-resize;
+}
+
+/* ==============================================================
+   Notas de documento
+   ============================================================== */
+
+.notes {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.note-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.note-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elev);
+  padding: 8px 9px;
+}
+
+.note-head {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.note-page {
+  border: 1px solid var(--border);
+  background: var(--bg-sunken);
+  color: var(--fg-muted);
+  border-radius: 999px;
+  font-family: inherit;
+  font-size: 10.5px;
+  line-height: 1.6;
+  padding: 0 8px;
+  cursor: pointer;
+}
+
+.note-page:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.note-date {
+  font-size: 10px;
+  color: var(--fg-faint);
+  margin-right: auto;
+  padding-left: 4px;
+}
+
+.note-text {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--fg);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* ---------------- Diálogo de notas (área de texto) ---------------- */
+
+.dialog-textarea {
+  width: 100%;
+  min-height: 110px;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg);
+  color: var(--fg);
+  padding: 8px 10px;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.dialog-textarea:focus {
+  outline: 2px solid var(--accent-soft);
+  border-color: var(--accent);
 }

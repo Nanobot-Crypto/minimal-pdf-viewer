@@ -125,3 +125,44 @@ export function promptDialog(opts: DialogOpts): Promise<string | null> {
     input.select();
   });
 }
+
+/** Diálogo con área de texto multilínea (notas). Devuelve `null` al cancelar. */
+export function textareaDialog(opts: DialogOpts): Promise<string | null> {
+  return new Promise((resolve) => {
+    const backdrop = shell();
+    const input = el('textarea', {
+      class: 'dialog-textarea',
+      placeholder: opts.input?.placeholder ?? '',
+      rows: '6',
+      'aria-label': opts.title,
+    }) as HTMLTextAreaElement;
+    input.value = opts.input?.value ?? '';
+    const btnConfirm = el('button', {
+      class: 'btn btn-primary',
+      text: opts.confirmText ?? 'Guardar',
+    });
+    const btnCancel = el('button', { class: 'btn', text: opts.cancelText ?? 'Cancelar' });
+    const finish = (v: string | null) => {
+      close(backdrop);
+      resolve(v);
+    };
+    btnConfirm.addEventListener('click', () => finish(input.value.trim() ? input.value : null));
+    btnCancel.addEventListener('click', () => finish(null));
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') finish(null);
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) finish(input.value.trim() ? input.value : null);
+    });
+    backdrop.append(
+      el(
+        'div',
+        { class: 'dialog', role: 'dialog', 'aria-modal': 'true' },
+        el('h2', { class: 'dialog-title', text: opts.title }),
+        opts.message ? el('p', { class: 'dialog-message', text: opts.message }) : null,
+        input,
+        el('div', { class: 'dialog-actions' }, btnCancel, btnConfirm),
+      ),
+    );
+    layer().append(backdrop);
+    input.focus();
+  });
+}

@@ -8,6 +8,8 @@ import { MdEditor } from './editor';
 import { extractHeadings, renderMarkdown } from './preview';
 import { exportHtmlTo, exportNameFor, exportPdfViaPrint, inlineLocalImages } from './export';
 import { bridge } from '../core/bridge';
+import type { NoteEntry } from '../core/notes';
+import { textareaDialog } from '../ui/dialog';
 
 export class MdDocView {
   private editor!: MdEditor;
@@ -19,6 +21,7 @@ export class MdDocView {
   private text: string;
   /** Último contenido guardado; `null` indica borrador restaurado sin guardar. */
   private savedText: string | null;
+  private lastOutlineKey = '';
 
   constructor(
     host: HTMLElement,
@@ -94,6 +97,7 @@ export class MdDocView {
           this.updateStatus();
           this.vh.tabsChanged();
           this.vh.stateChanged();
+          this.refreshOutlineIfChanged();
         },
         onCursorChanged: (cursor) => {
           this.tab.cursor = cursor;
@@ -164,6 +168,7 @@ export class MdDocView {
 
   /** Actualiza la referencia de archivo tras «Guardar como». */
   setFileRef(fileId: string, name: string): void {
+    this.vh.rekeyNotes(this.fileId, fileId, name);
     this.fileId = fileId;
     this.name = name;
     this.renderPreview();
@@ -192,6 +197,7 @@ export class MdDocView {
           this.updateStatus();
           this.vh.tabsChanged();
           this.vh.stateChanged();
+          this.refreshOutlineIfChanged();
         },
         onCursorChanged: (cursor) => {
           this.tab.cursor = cursor;
@@ -258,31 +264,155 @@ export class MdDocView {
   /* ---------- Panel lateral ---------- */
 
   private buildSidebar(): void {
-    this.vh.sidebarShow('md-outline', (host) => {
-      clear(host);
-      const headings = extractHeadings(this.text);
-      if (!headings.length) {
-        host.append(el('p', { class: 'sidebar-empty', text: 'Sin encabezados en este documento.' }));
-        return;
-      }
-      const wrap = el('div', { class: 'outline-tree' });
-      for (const h of headings) {
-        const row = el(
-          'button',
-          { class: 'outline-row', style: `padding-left:${10 + (h.level - 1) * 12}px` },
-          el('span', { class: 'outline-title', text: h.text || '(sin título)' }),
-        );
-        row.addEventListener('click', () => {
-          const lines = this.text.split('\n');
-          const pos = lines.slice(0, h.line).join('\n').length + (h.line > 0 ? 1 : 0);
-          if (this.mode === 'preview') this.setMode('split');
-          this.editor.setCursor(pos);
-          this.editor.focus();
-        });
-        wrap.append(row);
-      }
-      host.append(wrap);
+    this.vh.sidebarShowAll({
+      'md-outline': (host) => {
+        clear(host);
+        const headings = extractHeadings(this.text);
+        if (!headings.length) {
+          host.append(el('p', { class: 'sidebar-empty', text: 'Sin encabezados en este documento.' }));
+          return;
+        }
+        const wrap = el('div', { class: 'outline-tree' });
+        for (const h of headings) {
+          const row = el(
+            'button',
+            { class: 'outline-row', style: `padding-left:${10 + (h.level - 1) * 12}px` },
+            el('span', { class: 'outline-title', text: h.text || '(sin título)' }),
+          );
+          row.addEventListener('click', () => this.jumpToHeading(h));
+          wrap.append(row);
+        }
+        host.append(wrap);
+      },
+      'md-notes': (host) => {
+        clear(host);
+        host.append(this.renderNotes());
+      },
     });
+    this.lastOutlineKey = this.outlineKey();
+  }
+
+  private outlineKey(): string {
+    return extractHeadings(this.text)
+      .map((h) => `${h.level}:${h.text}:${h.line}`)
+      .join('|');
+  }
+
+  /** Solo repinta el panel si el esquema cambió de verdad (al escribir). */
+  private refreshOutlineIfChanged(): void {
+    const key = this.outlineKey();
+    if (key === this.lastOutlineKey) return;
+    this.buildSidebar();
+  }
+
+  /* ---------- Notas ---------- */
+
+  /** Diálogo para añadir una nota del documento. */
+  async addNote(): Promise<void> {
+    const text = await textareaDialog({
+      title: `Nota · ${this.name}`,
+      message: 'Se guarda con Vela; el documento Markdown no se modifica.',
+      input: { placeholder: 'Escribe la nota…' },
+      confirmText: 'Guardar nota',
+    });
+    if (text === null) return;
+    this.vh.addNote({ docId: this.fileId, docName: this.name, kind: 'md', text });
+    this.vh.setStatus({ right: 'Nota añadida' });
+  }
+
+  private async editNote(note: NoteEntry): Promise<void> {
+    const text = await textareaDialog({
+      title: 'Editar nota',
+      input: { value: note.text },
+      confirmText: 'Guardar cambios',
+    });
+    if (text === null) return;
+    this.vh.updateNote(note.id, { text });
+  }
+
+  private renderNotes(): HTMLElement {
+    const wrap = el('div', { class: 'notes' });
+    const btn = el('button', {
+      class: 'btn btn-block',
+      text: 'Añadir nota',
+      onclick: () => void this.addNote(),
+    });
+    const list = el('div', { class: 'note-list' });
+    wrap.append(btn, list);
+    this.renderNoteList(list);
+    return wrap;
+  }
+
+  private renderNoteList(list: HTMLElement): void {
+    clear(list);
+    const notes = this.vh.notesOf(this.fileId);
+    if (!notes.length) {
+      list.append(el('p', { class: 'sidebar-empty', text: 'Sin notas en este documento.' }));
+      return;
+    }
+    for (const n of notes) {
+      const row = el(
+        'div',
+        { class: 'note-row' },
+        el(
+          'div',
+          { class: 'note-head' },
+          el('span', { class: 'note-date', text: new Date(n.updated).toLocaleDateString('es-ES') }),
+          el('button', {
+            class: 'icon-btn',
+            title: 'Editar nota',
+            'aria-label': 'Editar nota',
+            onclick: () => void this.editNote(n),
+          }, icon('edit')),
+          el('button', {
+            class: 'icon-btn',
+            title: 'Borrar nota',
+            'aria-label': 'Borrar nota',
+            onclick: () => this.vh.removeNote(n.id),
+          }, icon('close')),
+        ),
+        el('p', { class: 'note-text', text: n.text }),
+      );
+      list.append(row);
+    }
+  }
+
+  /**
+   * Salta a un encabezado manteniendo el modo de vista actual: solo desplaza.
+   * (Antes forzaba la vista dividida, que no era lo pedido.)
+   */
+  private jumpToHeading(h: { level: number; text: string; line: number }): void {
+    if (this.mode === 'preview') {
+      this.scrollPreviewToHeading(h);
+      return;
+    }
+    const lines = this.text.split('\n');
+    const pos = lines.slice(0, h.line).join('\n').length + (h.line > 0 ? 1 : 0);
+    this.editor.setCursor(pos);
+    this.editor.focus();
+    if (this.mode === 'split') {
+      // Tras el scroll del editor (y su sincronización), alineamos la vista previa.
+      requestAnimationFrame(() => this.scrollPreviewToHeading(h));
+    }
+  }
+
+  /** Desplaza la previsualización al encabezado indicado. */
+  private scrollPreviewToHeading(h: { level: number; text: string; line: number }): void {
+    const norm = (s: string | null): string => (s ?? '').replace(/\s+/g, ' ').trim();
+    const heads = Array.from(this.preview.querySelectorAll<HTMLElement>('h1,h2,h3,h4,h5,h6'));
+    const target = heads.find((el) => norm(el.textContent) === h.text);
+    if (!target) {
+      // Respaldo (encabezados setext, textos con marcas): proporción del documento.
+      const total = Math.max(1, this.text.split('\n').length);
+      const ratio = Math.min(1, Math.max(0, h.line / total));
+      this.preview.scrollTop = ratio * (this.preview.scrollHeight - this.preview.clientHeight);
+      return;
+    }
+    const top =
+      target.getBoundingClientRect().top -
+      this.preview.getBoundingClientRect().top +
+      this.preview.scrollTop;
+    this.preview.scrollTop = Math.max(0, top - 8);
   }
 
   /* ---------- Estado ---------- */

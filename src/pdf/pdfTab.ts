@@ -9,6 +9,10 @@ import { showContextMenu } from '../ui/contextMenu';
 import { PdfView, type PdfSearchStats } from './viewer';
 import { PdfThumbnails } from './thumbnails';
 import { loadOutline, type OutlineNode } from './outline';
+import { filledCopyName, listFormFields, saveFilledPdf, type FormFieldInfo } from './forms';
+import { bridge } from '../core/bridge';
+import type { NoteEntry } from '../core/notes';
+import { textareaDialog } from '../ui/dialog';
 
 export class PdfDocView {
   private pdf: PdfView;
@@ -24,6 +28,8 @@ export class PdfDocView {
   private hideTimer: ReturnType<typeof setTimeout> | null = null;
   private total = 0;
   private root: HTMLElement;
+  private formFields: FormFieldInfo[] = [];
+  private btnSaveForm!: HTMLElement;
 
   constructor(
     host: HTMLElement,
@@ -82,6 +88,17 @@ export class PdfDocView {
       el('span', { class: 'pdf-toolbar-sep' }),
       el('button', { class: 'icon-btn', title: 'Imprimir (Ctrl+P)', 'aria-label': 'Imprimir', onclick: () => void this.vh.printRequested() }, icon('print')),
       el('button', { class: 'icon-btn', title: 'Buscar (Ctrl+F)', 'aria-label': 'Buscar', onclick: () => this.openFind() }, icon('search')),
+      (this.btnSaveForm = el(
+        'button',
+        {
+          class: 'icon-btn',
+          title: 'Guardar copia del formulario relleno…',
+          'aria-label': 'Guardar copia del formulario',
+          hidden: true,
+          onclick: () => void this.saveFormCopy(),
+        },
+        icon('save'),
+      )),
     );
     this.root.append(this.toolbar);
 
@@ -179,6 +196,66 @@ export class PdfDocView {
       rotation: this.tab.rotation,
     });
     if (this.tab.scrollTop > 0) this.pdf.setScrollTop(this.tab.scrollTop);
+    void this.initForms();
+  }
+
+  /** Habilita el guardado de copia si el PDF tiene campos AcroForm. */
+  private async initForms(): Promise<void> {
+    const doc = this.pdf.getDocument();
+    if (!doc) return;
+    try {
+      this.formFields = await listFormFields(doc);
+      this.btnSaveForm.hidden = this.formFields.length === 0;
+      this.btnSaveForm.title = this.formFields.length
+        ? `Guardar copia del formulario relleno (${this.formFields.length} campos)`
+        : 'Guardar copia del formulario relleno…';
+    } catch {
+      this.formFields = [];
+    }
+  }
+
+  /**
+   * Guarda una copia del PDF con los valores rellenos.
+   * El original solo se sobrescribe si el usuario lo confirma de forma explícita.
+   */
+  async saveFormCopy(): Promise<void> {
+    const doc = this.pdf.getDocument();
+    if (!doc) return;
+    let bytes: Uint8Array;
+    try {
+      bytes = await saveFilledPdf(doc);
+    } catch (err) {
+      const msg = (err as Error)?.message ?? String(err);
+      this.vh.setStatus({ left: `No se pudo generar la copia: ${msg}` });
+      return;
+    }
+    const target = await bridge.resolveSaveTarget(filledCopyName(this.name), [
+      { name: 'PDF', extensions: ['pdf'] },
+    ]);
+    if (!target) return;
+    const isOriginal = target.id === this.fileId;
+    const exists = await bridge.exists(target.id);
+    if (isOriginal) {
+      const ok = await this.vh.confirm(
+        'Sobrescribir el documento original',
+        `«${target.name}» es el archivo que abriste. El original perderá su contenido anterior. ¿Sobrescribirlo?`,
+        true,
+      );
+      if (!ok) return;
+    } else if (exists) {
+      const ok = await this.vh.confirm(
+        'El archivo ya existe',
+        `«${target.name}» ya existe. ¿Quieres sobrescribirlo?`,
+        true,
+      );
+      if (!ok) return;
+    }
+    const res = await bridge.writeBytes(target.id, bytes, { overwrite: isOriginal || exists });
+    if (res === 'ok' || res === 'downloaded') {
+      this.vh.setStatus({ right: `Formulario guardado en ${target.name}` });
+    } else if (res === 'exists') {
+      this.vh.setStatus({ right: 'No se sobrescribió nada: falta confirmación.' });
+    }
   }
 
   get element(): HTMLElement {
@@ -288,14 +365,20 @@ export class PdfDocView {
         this.thumbs?.mount(box);
       } else if (view === 'outline') {
         host.append(this.renderOutline());
+      } else if (view === 'notes') {
+        host.append(this.renderNotes());
       } else {
         host.append(this.renderBookmarks());
       }
     };
 
-    this.vh.sidebarShow('thumbs', (h) => render(h, 'thumbs'));
-    this.vh.sidebarShow('outline', (h) => render(h, 'outline'));
-    this.vh.sidebarShow('bookmarks', (h) => render(h, 'bookmarks'));
+    // Registro en lote: un solo redibujado del panel lateral.
+    this.vh.sidebarShowAll({
+      thumbs: (h) => render(h, 'thumbs'),
+      outline: (h) => render(h, 'outline'),
+      bookmarks: (h) => render(h, 'bookmarks'),
+      notes: (h) => render(h, 'notes'),
+    });
   }
 
   private renderOutline(): HTMLElement {
@@ -373,6 +456,99 @@ export class PdfDocView {
           },
         }, icon('close')),
       );
+      list.append(row);
+    }
+  }
+
+  /* ---------- Notas ---------- */
+
+  /** Diálogo para añadir una nota en la página actual. */
+  async addNote(): Promise<void> {
+    const text = await textareaDialog({
+      title: `Nota · página ${this.tab.page}`,
+      message: 'Se guarda con Vela; el PDF no se modifica.',
+      input: { placeholder: 'Escribe la nota…' },
+      confirmText: 'Guardar nota',
+    });
+    if (text === null) return;
+    this.vh.addNote({
+      docId: this.fileId,
+      docName: this.name,
+      kind: 'pdf',
+      page: this.tab.page,
+      text,
+    });
+    this.vh.setStatus({ right: `Nota añadida en la página ${this.tab.page}` });
+  }
+
+  private async editNote(note: NoteEntry): Promise<void> {
+    const text = await textareaDialog({
+      title: `Editar nota${note.page ? ` · página ${note.page}` : ''}`,
+      input: { value: note.text },
+      confirmText: 'Guardar cambios',
+    });
+    if (text === null) return;
+    this.vh.updateNote(note.id, { text });
+  }
+
+  private renderNotes(): HTMLElement {
+    const wrap = el('div', { class: 'notes' });
+    const btn = el('button', {
+      class: 'btn btn-block',
+      text: `Añadir nota (página ${this.tab.page})`,
+      onclick: () => void this.addNote(),
+    });
+    const list = el('div', { class: 'note-list' });
+    wrap.append(btn, list);
+    this.renderNoteList(list);
+    return wrap;
+  }
+
+  private renderNoteList(list: HTMLElement): void {
+    clear(list);
+    const notes = this.vh.notesOf(this.fileId);
+    if (!notes.length) {
+      list.append(el('p', { class: 'sidebar-empty', text: 'Sin notas en este documento.' }));
+      return;
+    }
+    for (const n of notes) {
+      const row = el(
+        'div',
+        { class: 'note-row' },
+        el(
+          'div',
+          { class: 'note-head' },
+          n.page
+            ? el('button', {
+                class: 'note-page',
+                text: `Pág. ${n.page}`,
+                title: 'Ir a la página',
+                onclick: () => this.gotoPage(n.page ?? 1),
+              })
+            : null,
+          el('span', { class: 'note-date', text: new Date(n.updated).toLocaleDateString('es-ES') }),
+          el('button', {
+            class: 'icon-btn',
+            title: 'Editar nota',
+            'aria-label': 'Editar nota',
+            onclick: () => void this.editNote(n),
+          }, icon('edit')),
+          el('button', {
+            class: 'icon-btn',
+            title: 'Borrar nota',
+            'aria-label': 'Borrar nota',
+            onclick: () => this.vh.removeNote(n.id),
+          }, icon('close')),
+        ),
+        el('p', { class: 'note-text', text: n.text }),
+      );
+      if (n.page) {
+        // Toda la fila lleva a la página de la nota (salvo los botones).
+        row.addEventListener('click', (e) => {
+          if ((e.target as HTMLElement).closest('.icon-btn')) return;
+          this.gotoPage(n.page ?? 1);
+        });
+      }
       list.append(row);
     }
   }

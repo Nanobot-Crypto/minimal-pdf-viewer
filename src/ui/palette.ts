@@ -60,19 +60,22 @@ export class CommandPalette {
       } else if (e.key === 'ArrowDown') {
         e.preventDefault();
         this.selected = Math.min(this.selected + 1, this.results.length - 1);
-        this.renderList(list);
+        this.updateSelection(list);
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
         this.selected = Math.max(this.selected - 1, 0);
-        this.renderList(list);
+        this.updateSelection(list);
       } else if (e.key === 'Enter') {
         e.preventDefault();
-        const cmd = this.results[this.selected];
-        if (cmd) {
-          this.close();
-          void cmd.run();
-        }
+        this.runAt(this.selected);
       }
+    });
+    // Clic delegado: funciona aunque las filas se reconstruyan.
+    list.addEventListener('click', (e) => {
+      const row = (e.target as HTMLElement).closest('.palette-item') as HTMLElement | null;
+      if (!row) return;
+      const index = Number(row.dataset.index);
+      if (Number.isFinite(index)) this.runAt(index);
     });
     this.renderList(list);
     input.focus();
@@ -87,10 +90,18 @@ export class CommandPalette {
     overlay.removeEventListener('mousedown', this.onBackdrop);
   }
 
+  private runAt(index: number): void {
+    const cmd = this.results[index];
+    if (!cmd) return;
+    this.close();
+    void cmd.run();
+  }
+
   private onBackdrop = (e: MouseEvent): void => {
     if ((e.target as HTMLElement).id === 'palette-overlay') this.close();
   };
 
+  /** Reconstruye la lista (solo al cambiar la consulta; nunca al pasar el ratón). */
   private renderList(list: HTMLElement): void {
     const all = this.getCommands().filter((c) => (c.enabled ? c.enabled() : true));
     this.results = rankItems(this.query, all, (c) => `${c.section ?? ''} ${c.title}`.trim());
@@ -111,16 +122,26 @@ export class CommandPalette {
         cmd.section ? el('span', { class: 'palette-section', text: cmd.section }) : null,
         cmd.hint ? el('span', { class: 'palette-hint', text: cmd.hint }) : null,
       );
+      row.dataset.index = String(i);
+      // Solo resaltado: reemplazar el DOM aquí rompía los clics (mousedown y
+      // mouseup caían en nodos distintos y el evento click nunca se disparaba).
       row.addEventListener('mouseenter', () => {
         this.selected = i;
-        this.renderList(list);
-      });
-      row.addEventListener('click', () => {
-        this.close();
-        void cmd.run();
+        this.updateSelection(list);
       });
       list.append(row);
     });
-    (list.children[this.selected] as HTMLElement | undefined)?.scrollIntoView({ block: 'nearest' });
+    this.updateSelection(list);
+  }
+
+  /** Actualiza el resaltado sin tocar la estructura del DOM. */
+  private updateSelection(list: HTMLElement): void {
+    const rows = list.querySelectorAll('.palette-item');
+    rows.forEach((row, i) => {
+      const active = i === this.selected;
+      row.classList.toggle('selected', active);
+      row.setAttribute('aria-selected', active ? 'true' : 'false');
+      if (active) (row as HTMLElement).scrollIntoView({ block: 'nearest' });
+    });
   }
 }

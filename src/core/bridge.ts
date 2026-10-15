@@ -54,6 +54,11 @@ export interface Bridge {
   readBytes(id: string): Promise<Uint8Array>;
   /** Escribe texto. `overwrite` debe venir de una confirmación explícita del usuario. */
   writeText(id: string, content: string, opts?: { overwrite?: boolean }): Promise<WriteResult>;
+  /** Escribe bytes (PDF resultante, etc.). Misma política de sobrescritura. */
+  writeBytes(id: string, content: Uint8Array, opts?: { overwrite?: boolean }): Promise<WriteResult>;
+  /** Notas del usuario (almacén separado del documento original). */
+  loadNotes(): Promise<string | null>;
+  saveNotes(json: string): Promise<void>;
   /** Diálogo "Guardar como". No escribe nada: solo resuelve la ruta destino. */
   resolveSaveTarget(defaultName: string, filters: OpenFilter[]): Promise<PickedFile | null>;
   loadState(): Promise<string | null>;
@@ -155,6 +160,22 @@ const tauriBridge: Bridge = {
       overwrite: opts?.overwrite ?? false,
     })) as WriteResult;
   },
+  async writeBytes(id, content, opts) {
+    const invoke = await getInvoke();
+    return (await invoke('vela_write_file', {
+      path: id,
+      contentB64: bytesToB64(content),
+      overwrite: opts?.overwrite ?? false,
+    })) as WriteResult;
+  },
+  async loadNotes() {
+    const invoke = await getInvoke();
+    return (await invoke('vela_load_notes')) as string | null;
+  },
+  async saveNotes(json) {
+    const invoke = await getInvoke();
+    await invoke('vela_save_notes', { json });
+  },
   async resolveSaveTarget(defaultName, filters) {
     const { save } = await import('@tauri-apps/plugin-dialog');
     const path = await save({ defaultPath: defaultName, filters: filtersToTauri(filters) });
@@ -191,13 +212,32 @@ const tauriBridge: Bridge = {
 type FileLike = FileSystemFileHandle | File;
 
 const fileRegistry = new Map<string, FileLike>();
-let seq = 0;
+/** Archivos creados con «Guardar como»: no existían antes, no hay que confirmar. */
+const createdFiles = new Set<string>();
 
-function registerFile(f: FileLike): PickedFile {
-  const name = f.name;
-  const id = isTauri ? name : `mem:${++seq}:${name}`;
+/**
+ * Identificador estable en navegador: nombre + tamaño + fecha. Sobrevive a
+ * recargas (las notas y los recientes siguen apuntando al mismo documento).
+ */
+function fileKey(name: string, size: number, mtime: number): string {
+  return `mem:${name}:${size}:${mtime}`;
+}
+
+function registerFile(f: File): PickedFile {
+  const id = isTauri ? f.name : fileKey(f.name, f.size, f.lastModified);
   fileRegistry.set(id, f);
-  return { id, name, kind: kindFromName(name) ?? 'md' };
+  return { id, name: f.name, kind: kindFromName(f.name) ?? 'md' };
+}
+
+async function registerHandle(h: FileSystemFileHandle): Promise<PickedFile> {
+  if (isTauri) {
+    fileRegistry.set(h.name, h);
+    return { id: h.name, name: h.name, kind: kindFromName(h.name) ?? 'md' };
+  }
+  const file = await h.getFile();
+  const id = fileKey(h.name, file.size, file.lastModified);
+  fileRegistry.set(id, h);
+  return { id, name: h.name, kind: kindFromName(h.name) ?? 'md' };
 }
 
 async function browserOpenFiles(filters: OpenFilter[]): Promise<PickedFile[]> {
@@ -213,7 +253,9 @@ async function browserOpenFiles(filters: OpenFilter[]): Promise<PickedFile[]> {
   if (w.showOpenFilePicker) {
     try {
       const handles = await w.showOpenFilePicker({ multiple: true, types });
-      return handles.map(registerFile);
+      const out: PickedFile[] = [];
+      for (const h of handles) out.push(await registerHandle(h));
+      return out;
     } catch (err) {
       const name = (err as Error)?.name;
       if (name === 'AbortError') return [];
@@ -266,7 +308,7 @@ const browserBridge: Bridge = {
             if (handle.kind === 'directory') {
               if (depth < 2) await walk(handle as FileSystemDirectoryHandle, depth + 1);
             } else if (mdFilter(handle.name)) {
-              const reg = registerFile(handle as FileSystemFileHandle);
+              const reg = await registerHandle(handle as FileSystemFileHandle);
               entries.push({ name: handle.name, id: reg.id, isDir: false, kind: reg.kind });
             }
           }
@@ -322,6 +364,7 @@ const browserBridge: Bridge = {
     if (w.showSaveFilePicker) {
       const handle = await w.showSaveFilePicker({ suggestedName: baseName(id) });
       fileRegistry.set(id, handle);
+      createdFiles.add(id);
       const out = await handle.createWritable();
       await out.write(content);
       await out.close();
@@ -336,6 +379,52 @@ const browserBridge: Bridge = {
     setTimeout(() => URL.revokeObjectURL(a.href), 5000);
     return 'downloaded';
   },
+  async writeBytes(id, content, opts) {
+    const overwrite = opts?.overwrite ?? false;
+    const entry = fileRegistry.get(id);
+    if (entry && 'createWritable' in entry) {
+      const w = await entry.createWritable();
+      await w.write(content);
+      await w.close();
+      return 'ok';
+    }
+    const w = window as unknown as {
+      showSaveFilePicker?: (opts: unknown) => Promise<FileSystemFileHandle>;
+    };
+    if (w.showSaveFilePicker) {
+      const handle = await w.showSaveFilePicker({ suggestedName: baseName(id) });
+      fileRegistry.set(id, handle);
+      createdFiles.add(id);
+      const out = await handle.createWritable();
+      await out.write(content);
+      await out.close();
+      return 'ok';
+    }
+    if (!overwrite) return 'exists';
+    const blob = new Blob([content.slice().buffer as ArrayBuffer], {
+      type: 'application/octet-stream',
+    });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = baseName(id);
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    return 'downloaded';
+  },
+  async loadNotes() {
+    try {
+      return localStorage.getItem('vela.notes');
+    } catch {
+      return null;
+    }
+  },
+  async saveNotes(json) {
+    try {
+      localStorage.setItem('vela.notes', json);
+    } catch {
+      /* cuota agotada: las notas siguen en memoria */
+    }
+  },
   async resolveSaveTarget(defaultName) {
     const w = window as unknown as {
       showSaveFilePicker?: (opts: unknown) => Promise<FileSystemFileHandle>;
@@ -343,7 +432,9 @@ const browserBridge: Bridge = {
     if (w.showSaveFilePicker) {
       try {
         const handle = await w.showSaveFilePicker({ suggestedName: defaultName });
-        return registerFile(handle);
+        const picked = await registerHandle(handle);
+        createdFiles.add(picked.id);
+        return picked;
       } catch (err) {
         if ((err as Error)?.name === 'AbortError') return null;
         return null;
@@ -367,7 +458,9 @@ const browserBridge: Bridge = {
   },
   async exists(id) {
     // En navegador solo podemos afirmar existencia de los archivos ya abiertos.
-    return fileRegistry.has(id);
+    // Un destino creado con «Guardar como» no se considera preexistente: el
+    // propio diálogo del navegador ya avisa si se reemplaza un archivo.
+    return fileRegistry.has(id) && !createdFiles.has(id);
   },
   async openWithSystem() {
     return false;

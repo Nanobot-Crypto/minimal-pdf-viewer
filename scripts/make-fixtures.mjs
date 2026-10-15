@@ -1,6 +1,8 @@
 /**
  * Genera los documentos de prueba (fixtures) en `fixtures/`:
  *  - ejemplo.pdf  → 5 páginas con títulos, texto, una tabla y una imagen.
+ *  - grande.pdf   → 120 páginas para pruebas de rendimiento.
+ *  - formulario.pdf → PDF rellenable (AcroForm) para pruebas de formularios.
  *  - informe.md   → Markdown con tablas, código, citas, listas e imagen.
  *  - notas.md     → documento corto para pruebas de pestañas.
  *
@@ -150,6 +152,66 @@ for (let i = 1; i <= 120; i++) {
   page.drawText(`Página ${i} de 120`, { x: 470, y: 40, size: 10, font });
 }
 fs.writeFileSync(path.join(out, 'grande.pdf'), await big.save());
+
+/* --------------- PDF con formulario AcroForm (rellenable) --------------- */
+
+const formDoc = await PDFDocument.create();
+const formPage = formDoc.addPage([595, 842]);
+const form = formDoc.getForm();
+const { height: fh } = formPage.getSize();
+formPage.drawText('Formulario de inscripción', {
+  x: 56,
+  y: fh - 90,
+  size: 20,
+  font: bold,
+  color: rgb(0.11, 0.11, 0.12),
+});
+formPage.drawText('Documento de prueba con campos AcroForm para Vela.', {
+  x: 56,
+  y: fh - 118,
+  size: 12,
+  font,
+  color: rgb(0.35, 0.35, 0.38),
+});
+
+const label = (text, x, y) =>
+  formPage.drawText(text, { x, y, size: 12, font: bold, color: rgb(0.2, 0.2, 0.22) });
+
+label('Nombre completo', 56, fh - 170);
+const nombre = form.createTextField('nombre');
+nombre.addToPage(formPage, { x: 56, y: fh - 205, width: 320, height: 26 });
+nombre.setFontSize(12);
+
+label('Correo electrónico', 56, fh - 245);
+const email = form.createTextField('email');
+email.addToPage(formPage, { x: 56, y: fh - 280, width: 320, height: 26 });
+email.setFontSize(12);
+
+label('Modalidad de envío', 56, fh - 320);
+const envio = form.createRadioGroup('envio');
+envio.addOptionToPage('estandar', formPage, { x: 56, y: fh - 350, width: 18, height: 18 });
+formPage.drawText('Estándar', { x: 82, y: fh - 344, size: 12, font });
+envio.addOptionToPage('urgente', formPage, { x: 180, y: fh - 350, width: 18, height: 18 });
+formPage.drawText('Urgente', { x: 206, y: fh - 344, size: 12, font });
+
+label('Acepto los términos', 56, fh - 392);
+const acepto = form.createCheckBox('acepto');
+acepto.addToPage(formPage, { x: 210, y: fh - 398, width: 18, height: 18 });
+
+label('Ciudad', 56, fh - 440);
+const ciudad = form.createDropdown('ciudad');
+ciudad.setOptions(['Madrid', 'Barcelona', 'Valencia', 'Sevilla', 'Bilbao']);
+ciudad.addToPage(formPage, { x: 56, y: fh - 475, width: 240, height: 26 });
+ciudad.setFontSize(12);
+
+label('Intereses (selección múltiple)', 56, fh - 515);
+const intereses = form.createOptionList('intereses');
+intereses.setOptions(['Lectura', 'Montañismo', 'Fotografía', 'Música', 'Cocina']);
+intereses.addToPage(formPage, { x: 56, y: fh - 640, width: 240, height: 110 });
+intereses.setFontSize(12);
+
+form.updateFieldAppearances(font);
+fs.writeFileSync(path.join(out, 'formulario.pdf'), await formDoc.save());
 
 /* ----------------------------- Markdown ----------------------------- */
 

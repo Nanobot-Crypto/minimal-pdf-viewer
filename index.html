@@ -8,15 +8,22 @@
   </head>
   <body>
     <div id="app">
-      <header id="topbar">
+      <!-- Barra de título integrada (estilo GNOME/Adwaita): pestañas en la misma fila -->
+      <header id="topbar" data-tauri-drag-region>
         <div class="topbar-left">
           <button id="btn-sidebar" class="icon-btn" title="Panel lateral (Ctrl+B)" aria-label="Panel lateral"></button>
           <button id="btn-open" class="icon-btn" title="Abrir documento (Ctrl+O)" aria-label="Abrir documento"></button>
         </div>
-        <div id="tabstrip" role="tablist" aria-label="Documentos abiertos"></div>
+        <div id="tabstrip" role="tablist" aria-label="Documentos abiertos" data-tauri-drag-region></div>
         <div class="topbar-right">
           <button id="btn-palette" class="icon-btn" title="Paleta de comandos (Ctrl+K)" aria-label="Paleta de comandos"></button>
           <button id="btn-theme" class="icon-btn" title="Cambiar tema" aria-label="Cambiar tema"></button>
+          <!-- Controles de ventana (solo escritorio; estilo GNOME) -->
+          <div id="window-controls" hidden>
+            <button id="btn-win-min" class="win-btn" title="Minimizar" aria-label="Minimizar"></button>
+            <button id="btn-win-max" class="win-btn" title="Maximizar" aria-label="Maximizar"></button>
+            <button id="btn-win-close" class="win-btn win-close" title="Cerrar" aria-label="Cerrar"></button>
+          </div>
         </div>
       </header>
       <div id="main">
@@ -31,6 +38,15 @@
         <span id="status-right"></span>
       </footer>
     </div>
+    <!-- Bordes de redimensionado (ventana sin decoración) -->
+    <div class="resize-handle" data-resize="North" hidden></div>
+    <div class="resize-handle" data-resize="South" hidden></div>
+    <div class="resize-handle" data-resize="East" hidden></div>
+    <div class="resize-handle" data-resize="West" hidden></div>
+    <div class="resize-handle" data-resize="NorthEast" hidden></div>
+    <div class="resize-handle" data-resize="NorthWest" hidden></div>
+    <div class="resize-handle" data-resize="SouthEast" hidden></div>
+    <div class="resize-handle" data-resize="SouthWest" hidden></div>
     <div id="drop-overlay" hidden>Suelta para abrir el documento</div>
     <div id="palette-overlay" hidden></div>
     <div id="menu-layer"></div>

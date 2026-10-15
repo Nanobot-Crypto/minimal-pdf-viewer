@@ -107,6 +107,32 @@ fn state_file(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
     Ok(dir.join("vela-state.json"))
 }
 
+/// Notas del usuario: almacén propio en el directorio de la aplicación.
+/// Nunca se escriben dentro del documento original.
+fn notes_file(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    let dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|e| format!("Directorio de configuración no disponible: {e}"))?;
+    let _ = fs::create_dir_all(&dir);
+    Ok(dir.join("vela-notes.json"))
+}
+
+#[tauri::command]
+fn vela_load_notes(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    let p = notes_file(&app)?;
+    match fs::read_to_string(p) {
+        Ok(json) => Ok(Some(json)),
+        Err(_) => Ok(None),
+    }
+}
+
+#[tauri::command]
+fn vela_save_notes(app: tauri::AppHandle, json: String) -> Result<(), String> {
+    let p = notes_file(&app)?;
+    fs::write(p, json).map_err(|e| format!("No se pudieron guardar las notas: {e}"))
+}
+
 #[tauri::command]
 fn vela_load_state(app: tauri::AppHandle) -> Result<Option<String>, String> {
     let p = state_file(&app)?;
@@ -165,6 +191,8 @@ fn main() {
             vela_read_dir,
             vela_load_state,
             vela_save_state,
+            vela_load_notes,
+            vela_save_notes,
             vela_open_with_system,
             vela_startup_files,
         ])

@@ -11,6 +11,17 @@ import {
   toggleFavorite as toggleFavoriteLogic,
 } from './core/state';
 import { createTab, findIndexByFile, moveTab, nextIndex, syncTabCounter } from './core/tabs';
+import {
+  addNote as addNoteLogic,
+  notesFor,
+  parseNotes,
+  removeNote as removeNoteLogic,
+  rekeyNotes as rekeyNotesLogic,
+  serializeNotes,
+  updateNote as updateNoteLogic,
+  type NoteEntry,
+  type NoteInput,
+} from './core/notes';
 import { GLOBAL_SHORTCUTS, resolveShortcut } from './core/shortcuts';
 import type {
   DirEntryInfo,
@@ -28,6 +39,7 @@ import { clear, el } from './ui/dom';
 import { icon } from './ui/icons';
 import { confirmDialog, infoDialog } from './ui/dialog';
 import { showContextMenu } from './ui/contextMenu';
+import { initTitlebar } from './ui/titlebar';
 import { EmptyView, ErrorView, LoadingView, MissingView } from './ui/views';
 import { PdfDocView } from './pdf/pdfTab';
 import { MdDocView } from './md/mdTab';
@@ -75,6 +87,9 @@ export class App implements ViewHost {
   private sidebarViewId = 'auto';
   private palette: CommandPalette;
   private folder: { root: string; entries: DirEntryInfo[] } | null = null;
+  /** Notas del usuario, indexadas por documento (almacén local). */
+  private notes: NoteEntry[] = [];
+  private notesTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Elementos DOM
   private contentEl!: HTMLElement;
@@ -105,6 +120,7 @@ export class App implements ViewHost {
 
     const json = await this.b.loadState();
     this.persisted = parseState(json);
+    this.notes = parseNotes(await this.b.loadNotes());
     applyTheme(this.persisted.theme);
     watchSystemTheme(() => {
       if (this.persisted.theme === 'system') applyTheme('system');
@@ -115,6 +131,7 @@ export class App implements ViewHost {
     this.wireShortcuts();
     this.wireDragAndDrop();
     this.wireTabStrip();
+    void initTitlebar();
 
     document.getElementById('btn-theme')!.append(icon(this.themeIcon()));
     document.getElementById('btn-open')!.append(icon('open'));
@@ -144,7 +161,10 @@ export class App implements ViewHost {
       await this.openPicked(p);
     }
 
-    window.addEventListener('beforeunload', () => void this.persistence.flush());
+    window.addEventListener('beforeunload', () => {
+      void this.persistence.flush();
+      void this.flushNotes();
+    });
   }
 
   /* -------------------------------------------------------------- */
@@ -560,15 +580,25 @@ export class App implements ViewHost {
     this.renderSidebar();
   }
 
+  sidebarShowAll(views: Record<string, (host: HTMLElement) => void>): void {
+    for (const [viewId, render] of Object.entries(views)) this.sidebarSections.set(viewId, render);
+    if (this.sidebarViewId === 'auto' || !this.sidebarSections.has(this.sidebarViewId)) {
+      this.sidebarViewId = Object.keys(views)[0] ?? this.sidebarViewId;
+    }
+    // Un único redibujado para todas las secciones (antes se rehacía el DOM
+    // una vez por sección y los renders se pisaban entre sí).
+    this.renderSidebar();
+  }
+
   private renderSidebar(): void {
     const tab = this.activeTab();
     const sections = new Map(this.sidebarSections);
     if (this.folder) sections.set('explorer', (host) => this.renderExplorer(host));
     const order =
       tab?.kind === 'pdf'
-        ? ['thumbs', 'outline', 'bookmarks']
+        ? ['thumbs', 'outline', 'bookmarks', 'notes']
         : tab?.kind === 'md'
-          ? ['explorer', 'md-outline']
+          ? ['explorer', 'md-outline', 'md-notes']
           : ['explorer'];
     const labels: Record<string, string> = {
       thumbs: 'Miniaturas',
@@ -576,6 +606,8 @@ export class App implements ViewHost {
       bookmarks: 'Marcadores',
       explorer: 'Explorador',
       'md-outline': 'Esquema',
+      notes: 'Notas',
+      'md-notes': 'Notas',
     };
     const available = order.filter((id) => sections.has(id));
     if (!available.includes(this.sidebarViewId)) this.sidebarViewId = available[0] ?? 'explorer';
@@ -644,6 +676,51 @@ export class App implements ViewHost {
 
   favoritesOf(fileId: string): FavoriteEntry[] {
     return this.persisted.favorites.filter((f) => f.id === fileId);
+  }
+
+  /* ---------- Notas ---------- */
+
+  notesOf(docId: string): NoteEntry[] {
+    return notesFor(this.notes, docId);
+  }
+
+  addNote(input: NoteInput): NoteEntry {
+    this.notes = addNoteLogic(this.notes, input);
+    this.scheduleNotesSave();
+    return this.notes[this.notes.length - 1];
+  }
+
+  updateNote(id: string, patch: Pick<NoteEntry, 'text'> & Partial<Pick<NoteEntry, 'page'>>): void {
+    this.notes = updateNoteLogic(this.notes, id, patch);
+    this.scheduleNotesSave();
+  }
+
+  removeNote(id: string): void {
+    this.notes = removeNoteLogic(this.notes, id);
+    this.scheduleNotesSave();
+  }
+
+  rekeyNotes(fromId: string, toId: string, toName: string): void {
+    this.notes = rekeyNotesLogic(this.notes, fromId, toId, toName);
+    this.scheduleNotesSave();
+  }
+
+  private scheduleNotesSave(): void {
+    if (this.notesTimer) clearTimeout(this.notesTimer);
+    this.notesTimer = setTimeout(() => void this.flushNotes(), 400);
+    this.renderSidebar();
+  }
+
+  private async flushNotes(): Promise<void> {
+    if (this.notesTimer) {
+      clearTimeout(this.notesTimer);
+      this.notesTimer = null;
+    }
+    try {
+      await this.b.saveNotes(serializeNotes(this.notes));
+    } catch {
+      /* la persistencia de notas es best-effort */
+    }
   }
 
   toggleFavorite(entry: Omit<FavoriteEntry, 'at'>): void {
@@ -808,6 +885,16 @@ export class App implements ViewHost {
         section: 'Documento',
         enabled: () => isPdf,
         run: () => pdfView()?.rotate(),
+      },
+      {
+        id: 'doc.addNote',
+        title: 'Añadir nota',
+        section: 'Documento',
+        enabled: () => Boolean(tab),
+        run: () => {
+          if (isPdf) pdfView()?.addNote();
+          else mdView()?.addNote();
+        },
       },
       {
         id: 'doc.favorite',
