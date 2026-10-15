@@ -22,7 +22,20 @@ import {
   type NoteEntry,
   type NoteInput,
 } from './core/notes';
-import { GLOBAL_SHORTCUTS, resolveShortcut } from './core/shortcuts';
+import { comboFor as comboOfCommand, conflictFor, formatCombo, reassignShortcut, resetShortcutOverrides, resolveShortcut } from './core/shortcuts';
+import {
+  draftFor,
+  emptyDocStore,
+  parseDocStore,
+  putDraft,
+  putPosition,
+  removeDraft,
+  sanitizePosition,
+  serializeDocStore,
+  shouldOfferRecovery,
+  type DocStore,
+} from './core/docstore';
+import { normalizeSettings, type AppSettings } from './core/settings';
 import type {
   DirEntryInfo,
   DocKind,
@@ -32,14 +45,20 @@ import type {
   PickedFile,
   Tab,
 } from './core/types';
-import type { ViewHost } from './ui/host';
+import type { PdfPositionInput, ViewHost } from './ui/host';
 import { CommandPalette, type Command } from './ui/palette';
-import { applyTheme, watchSystemTheme, type ThemePref } from './ui/theme';
+import { applyAppearance, applyTheme, watchSystemTheme, type ThemePref } from './ui/theme';
 import { clear, el } from './ui/dom';
 import { icon } from './ui/icons';
-import { confirmDialog, infoDialog } from './ui/dialog';
+import { confirmDialog, confirmDialogEx, infoDialog } from './ui/dialog';
 import { showContextMenu } from './ui/contextMenu';
 import { initTitlebar } from './ui/titlebar';
+import {
+  isSettingsOpen,
+  openSettingsPanel,
+  type SettingsHost,
+  type ShortcutCommandInfo,
+} from './ui/settings';
 import { EmptyView, ErrorView, LoadingView, MissingView } from './ui/views';
 import { PdfDocView } from './pdf/pdfTab';
 import { MdDocView } from './md/mdTab';
@@ -54,8 +73,9 @@ const MD_FILTERS: OpenFilter[] = [{ name: 'Markdown', extensions: ['md', 'markdo
 
 const TYPING_ALLOWED = new Set([
   'palette.open',
-  'doc.save',
-  'doc.saveAs',
+  'settings.open',
+  'file.save',
+  'file.saveAs',
   'doc.find',
   'tab.close',
   'tab.next',
@@ -77,7 +97,7 @@ interface LoadedView {
   md?: MdDocView;
 }
 
-export class App implements ViewHost {
+export class App implements ViewHost, SettingsHost {
   private persisted: PersistedState = defaultState();
   private persistence: StatePersistence;
   private tabs: Tab[] = [];
@@ -90,6 +110,11 @@ export class App implements ViewHost {
   /** Notas del usuario, indexadas por documento (almacén local). */
   private notes: NoteEntry[] = [];
   private notesTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Posiciones de lectura y borradores de recuperación (almacén local). */
+  private docStore: DocStore = emptyDocStore();
+  private docStoreTimer: ReturnType<typeof setTimeout> | null = null;
+  private fileAutosaveTimer: ReturnType<typeof setTimeout> | null = null;
+  private sweepTimer: ReturnType<typeof setInterval> | null = null;
 
   // Elementos DOM
   private contentEl!: HTMLElement;
@@ -121,7 +146,8 @@ export class App implements ViewHost {
     const json = await this.b.loadState();
     this.persisted = parseState(json);
     this.notes = parseNotes(await this.b.loadNotes());
-    applyTheme(this.persisted.theme);
+    this.docStore = parseDocStore(await this.b.loadDocStore());
+    applyAppearance(this.persisted.theme, this.persisted.settings);
     watchSystemTheme(() => {
       if (this.persisted.theme === 'system') applyTheme('system');
       this.refreshActiveTheme();
@@ -137,6 +163,7 @@ export class App implements ViewHost {
     document.getElementById('btn-open')!.append(icon('open'));
     document.getElementById('btn-sidebar')!.append(icon('sidebar'));
     document.getElementById('btn-palette')!.append(icon('palette'));
+    document.getElementById('btn-settings')!.append(icon('settings'));
 
     this.setSidebarOpen(this.persisted.sidebarOpen);
 
@@ -162,9 +189,19 @@ export class App implements ViewHost {
     }
 
     window.addEventListener('beforeunload', () => {
+      if (this.sweepTimer) clearInterval(this.sweepTimer);
       void this.persistence.flush();
       void this.flushNotes();
+      void this.flushDocStore();
+      void this.autosaveFiles();
     });
+
+    // Repaso periódico: segundan al autoguardado por cambios y cubren cierres
+    // inesperados de la aplicación.
+    this.sweepTimer = setInterval(() => {
+      void this.flushDocStore();
+      if (this.persisted.settings.autoSaveToFile) void this.autosaveFiles();
+    }, 15_000);
   }
 
   /* -------------------------------------------------------------- */
@@ -176,6 +213,7 @@ export class App implements ViewHost {
     document.getElementById('btn-sidebar')!.addEventListener('click', () => this.toggleSidebar());
     document.getElementById('btn-theme')!.addEventListener('click', () => this.toggleTheme());
     document.getElementById('btn-palette')!.addEventListener('click', () => this.palette.toggle());
+    document.getElementById('btn-settings')!.addEventListener('click', () => this.openSettings());
   }
 
   private wireTabStrip(): void {
@@ -363,6 +401,8 @@ export class App implements ViewHost {
     this.contentEl.append(loading);
     try {
       if (tab.kind === 'pdf') {
+        // Retoma la última posición conocida del documento (si hay alguna).
+        this.applyStoredPosition(tab);
         const bytes = await this.b.readBytes(tab.fileId);
         loading.remove();
         const view = new PdfDocView(this.contentEl, tab.fileId, tab.name, tab, this);
@@ -371,7 +411,7 @@ export class App implements ViewHost {
         tab.status = 'ready';
         this.renderSidebar();
       } else {
-        const text = await this.b.readText(tab.fileId);
+        const initial = await this.loadMdText(tab);
         loading.remove();
         const view = new MdDocView(
           this.contentEl,
@@ -379,7 +419,7 @@ export class App implements ViewHost {
           tab.name,
           tab,
           this,
-          tab.draft ?? text,
+          initial,
         );
         this.loaded.set(tab.id, { md: view });
         tab.status = 'ready';
@@ -394,6 +434,55 @@ export class App implements ViewHost {
     }
     this.renderTabs();
     this.stateChanged();
+  }
+
+  /**
+   * Restaura la última posición de lectura del PDF (página, zoom y ajuste).
+   * Los valores se sanean antes de aplicarlos: si el archivo cambió de sitio o
+   * de contenido, la apertura sigue funcionando (la página se recorta al total
+   * real dentro del visor).
+   */
+  private applyStoredPosition(tab: Tab): void {
+    const pos = sanitizePosition(this.docStore.positions[tab.fileId]);
+    if (!pos) return;
+    tab.page = pos.page;
+    tab.zoom = pos.fit === 'custom' ? pos.zoom : pos.fit;
+  }
+
+  /**
+   * Texto inicial de un Markdown. Si hay un borrador de recuperación más
+   * reciente que el archivo (cierre inesperado de la app), se ofrece restaurar
+   * o descartar. Nunca se toca el archivo original.
+   */
+  private async loadMdText(tab: Tab): Promise<string> {
+    const text = await this.b.readText(tab.fileId);
+    if (tab.draft) return tab.draft;
+    const draft = draftFor(this.docStore, tab.fileId);
+    if (!draft) return text;
+    if (!shouldOfferRecovery(draft, text)) {
+      // El borrador coincide con el archivo: ya no aporta nada.
+      this.clearDraft(tab.fileId);
+      return text;
+    }
+    const when = new Date(draft.updated).toLocaleString('es-ES');
+    const choice = await confirmDialogEx({
+      title: 'Borrador de recuperación',
+      message:
+        `Hay un borrador sin guardar de «${tab.name}» del ${when}. ` +
+        'Puedes retomarlo o descartarlo; el archivo del disco no se ha modificado.',
+      confirmText: 'Restaurar borrador',
+      cancelText: 'Descartar',
+    });
+    if (choice === 'confirm') {
+      tab.draft = draft.text;
+      tab.dirty = true;
+      this.renderTabs();
+      return draft.text;
+    }
+    if (choice === 'cancel') this.clearDraft(tab.fileId);
+    // «dismiss» (Esc): se abre el archivo, pero el borrador se conserva
+    // y se volverá a ofrecer la próxima vez.
+    return text;
   }
 
   activateTab(index: number): void {
@@ -723,6 +812,84 @@ export class App implements ViewHost {
     }
   }
 
+  /* ---------- Posiciones de lectura y borradores (almacén local) ---------- */
+
+  recordPdfPosition(input: PdfPositionInput): void {
+    this.docStore = putPosition(this.docStore, {
+      docId: input.docId,
+      docName: input.docName,
+      page: input.page,
+      zoom: input.zoom,
+      fit: input.fit,
+      pageCount: input.total,
+      updated: Date.now(),
+    });
+    this.scheduleDocStoreSave();
+  }
+
+  mdDraftChanged(docId: string, docName: string, text: string): void {
+    this.docStore = putDraft(this.docStore, { docId, docName, text, updated: Date.now() });
+    this.scheduleDocStoreSave(1000);
+    if (this.persisted.settings.autoSaveToFile) this.scheduleFileAutosave();
+  }
+
+  clearDraft(docId: string): void {
+    this.docStore = removeDraft(this.docStore, docId);
+    this.scheduleDocStoreSave();
+  }
+
+  private scheduleDocStoreSave(delayMs = 500): void {
+    if (this.docStoreTimer) clearTimeout(this.docStoreTimer);
+    this.docStoreTimer = setTimeout(() => void this.flushDocStore(), delayMs);
+  }
+
+  private async flushDocStore(): Promise<void> {
+    if (this.docStoreTimer) {
+      clearTimeout(this.docStoreTimer);
+      this.docStoreTimer = null;
+    }
+    try {
+      await this.b.saveDocStore(serializeDocStore(this.docStore));
+    } catch {
+      /* la persistencia es best-effort */
+    }
+  }
+
+  /**
+   * Autoguardado en el archivo Markdown (opcional, desactivado por defecto).
+   * Solo se ejecuta si el usuario activó el ajuste con confirmación explícita.
+   */
+  private scheduleFileAutosave(): void {
+    if (this.fileAutosaveTimer) clearTimeout(this.fileAutosaveTimer);
+    this.fileAutosaveTimer = setTimeout(() => void this.autosaveFiles(), 2500);
+  }
+
+  private async autosaveFiles(): Promise<void> {
+    if (this.fileAutosaveTimer) {
+      clearTimeout(this.fileAutosaveTimer);
+      this.fileAutosaveTimer = null;
+    }
+    if (!this.persisted.settings.autoSaveToFile) return;
+    for (const tab of this.tabs) {
+      if (tab.kind !== 'md' || !tab.dirty) continue;
+      const view = this.loaded.get(tab.id)?.md;
+      if (!view) continue;
+      try {
+        const res = await this.b.writeText(tab.fileId, view.getText(), { overwrite: true });
+        if (res === 'ok' || res === 'downloaded') {
+          view.markClean();
+          this.renderTabs();
+          this.setStatus({ right: 'Autoguardado' });
+        }
+        // 'exists': falta confirmación. La regla de no sobrescribir sin
+        // confirmación sigue vigente: no se escribe nada.
+      } catch {
+        /* el autoguardado es best-effort; el borrador de recuperación cubre */
+      }
+    }
+    this.stateChanged();
+  }
+
   toggleFavorite(entry: Omit<FavoriteEntry, 'at'>): void {
     this.persisted.favorites = toggleFavoriteLogic(this.persisted.favorites, entry);
     this.stateChanged();
@@ -740,6 +907,68 @@ export class App implements ViewHost {
 
   confirm(title: string, message: string, danger = false): Promise<boolean> {
     return confirmDialog({ title, message, danger });
+  }
+
+  /* ---------- Ajustes (SettingsHost) ---------- */
+
+  getSettings(): AppSettings {
+    return this.persisted.settings;
+  }
+
+  patchSettings(patch: Partial<AppSettings>): void {
+    this.persisted.settings = normalizeSettings({ ...this.persisted.settings, ...patch });
+    applyAppearance(this.persisted.theme, this.persisted.settings);
+    this.stateChanged();
+  }
+
+  getTheme(): ThemePref {
+    return this.persisted.theme;
+  }
+
+  setTheme(pref: ThemePref): void {
+    this.setThemePref(pref);
+  }
+
+  listShortcutCommands(): ShortcutCommandInfo[] {
+    return this.commands().map((c) => ({ id: c.id, title: c.title, section: c.section }));
+  }
+
+  comboFor(commandId: string): string | null {
+    return comboOfCommand(commandId, this.persisted.settings.shortcutOverrides);
+  }
+
+  /** Asigna un atajo. Devuelve el comando que se quedó sin atajo (si lo hubo). */
+  assignShortcut(commandId: string, combo: string | null): string | null {
+    const { overrides, displaced } = reassignShortcut(
+      this.persisted.settings.shortcutOverrides,
+      commandId,
+      combo,
+    );
+    this.persisted.settings.shortcutOverrides = overrides;
+    this.stateChanged();
+    return displaced;
+  }
+
+  resetShortcuts(): void {
+    this.persisted.settings.shortcutOverrides = resetShortcutOverrides();
+    this.stateChanged();
+  }
+
+  conflictOf(commandId: string, combo: string): ShortcutCommandInfo | null {
+    const other = conflictFor(commandId, combo, this.persisted.settings.shortcutOverrides);
+    if (!other) return null;
+    const cmd = this.commands().find((c) => c.id === other);
+    return cmd ? { id: cmd.id, title: cmd.title, section: cmd.section } : { id: other, title: other };
+  }
+
+  /** Etiqueta de atajo vigente para la paleta y los menús. */
+  private hintFor(commandId: string): string | undefined {
+    const combo = comboOfCommand(commandId, this.persisted.settings.shortcutOverrides);
+    return combo ? formatCombo(combo) : undefined;
+  }
+
+  openSettings(): void {
+    openSettingsPanel(this);
   }
 
   async printRequested(): Promise<void> {
@@ -762,7 +991,7 @@ export class App implements ViewHost {
         id: 'file.open',
         title: 'Abrir documento…',
         section: 'Archivo',
-        hint: 'Ctrl+O',
+        hint: this.hintFor('file.open'),
         run: () => this.openDocuments(),
       },
       {
@@ -775,7 +1004,7 @@ export class App implements ViewHost {
         id: 'file.save',
         title: 'Guardar Markdown',
         section: 'Archivo',
-        hint: 'Ctrl+S',
+        hint: this.hintFor('file.save'),
         enabled: () => isMd,
         run: () => this.saveMd(),
       },
@@ -783,7 +1012,7 @@ export class App implements ViewHost {
         id: 'file.saveAs',
         title: 'Guardar como…',
         section: 'Archivo',
-        hint: 'Ctrl+Mayús+S',
+        hint: this.hintFor('file.saveAs'),
         enabled: () => isMd,
         run: () => this.saveMdAs(),
       },
@@ -805,7 +1034,7 @@ export class App implements ViewHost {
         id: 'doc.print',
         title: 'Imprimir',
         section: 'Documento',
-        hint: 'Ctrl+P',
+        hint: this.hintFor('doc.print'),
         enabled: () => Boolean(tab),
         run: () => void this.print(),
       },
@@ -820,7 +1049,7 @@ export class App implements ViewHost {
         id: 'doc.find',
         title: 'Buscar en el documento',
         section: 'Documento',
-        hint: 'Ctrl+F',
+        hint: this.hintFor('doc.find'),
         enabled: () => Boolean(tab),
         run: () => {
           if (isPdf) pdfView()?.openFind();
@@ -845,7 +1074,7 @@ export class App implements ViewHost {
         id: 'doc.zoomIn',
         title: 'Acercar',
         section: 'Documento',
-        hint: 'Ctrl++',
+        hint: this.hintFor('doc.zoomIn'),
         enabled: () => isPdf,
         run: () => pdfView()?.zoomIn(),
       },
@@ -853,7 +1082,7 @@ export class App implements ViewHost {
         id: 'doc.zoomOut',
         title: 'Alejar',
         section: 'Documento',
-        hint: 'Ctrl+-',
+        hint: this.hintFor('doc.zoomOut'),
         enabled: () => isPdf,
         run: () => pdfView()?.zoomOut(),
       },
@@ -861,7 +1090,7 @@ export class App implements ViewHost {
         id: 'doc.zoomReset',
         title: 'Zoom 100 %',
         section: 'Documento',
-        hint: 'Ctrl+0',
+        hint: this.hintFor('doc.zoomReset'),
         enabled: () => isPdf,
         run: () => pdfView()?.setZoom(1),
       },
@@ -909,14 +1138,14 @@ export class App implements ViewHost {
         id: 'view.sidebar',
         title: 'Mostrar/ocultar panel lateral',
         section: 'Ver',
-        hint: 'Ctrl+B',
+        hint: this.hintFor('view.sidebar'),
         run: () => this.toggleSidebar(),
       },
       {
         id: 'view.theme',
         title: 'Cambiar tema (claro/oscuro)',
         section: 'Ver',
-        hint: 'Ctrl+T',
+        hint: this.hintFor('view.theme'),
         run: () => this.toggleTheme(),
       },
       {
@@ -963,7 +1192,7 @@ export class App implements ViewHost {
         id: 'tab.close',
         title: 'Cerrar pestaña',
         section: 'Pestañas',
-        hint: 'Ctrl+W',
+        hint: this.hintFor('tab.close'),
         enabled: () => Boolean(tab),
         run: () => void this.requestClose(this.activeIndex),
       },
@@ -971,7 +1200,7 @@ export class App implements ViewHost {
         id: 'tab.next',
         title: 'Pestaña siguiente',
         section: 'Pestañas',
-        hint: 'Ctrl+Tab',
+        hint: this.hintFor('tab.next'),
         enabled: () => this.tabs.length > 1,
         run: () => this.activateTab(nextIndex(this.activeIndex, this.tabs.length, 1)),
       },
@@ -979,28 +1208,50 @@ export class App implements ViewHost {
         id: 'tab.prev',
         title: 'Pestaña anterior',
         section: 'Pestañas',
-        hint: 'Ctrl+Mayús+Tab',
+        hint: this.hintFor('tab.prev'),
         enabled: () => this.tabs.length > 1,
         run: () => this.activateTab(nextIndex(this.activeIndex, this.tabs.length, -1)),
       },
+      // Ir a la n-ésima pestaña (Ctrl+1 … Ctrl+9).
+      ...Array.from({ length: 9 }, (_, i): Command => {
+        const n = i + 1;
+        return {
+          id: `tab.${n}`,
+          title: `Ir a la pestaña ${n}`,
+          section: 'Pestañas',
+          hint: this.hintFor(`tab.${n}`),
+          enabled: () => this.tabs.length >= n,
+          run: () => this.activateTab(n - 1),
+        };
+      }),
       {
         id: 'palette.open',
         title: 'Paleta de comandos',
         section: 'Ayuda',
-        hint: 'Ctrl+K',
+        hint: this.hintFor('palette.open'),
         run: () => this.palette.toggle(),
+      },
+      {
+        id: 'settings.open',
+        title: 'Ajustes',
+        section: 'Ayuda',
+        hint: this.hintFor('settings.open'),
+        run: () => this.openSettings(),
       },
       {
         id: 'help.shortcuts',
         title: 'Ver atajos de teclado',
         section: 'Ayuda',
         run: () => {
-          const lines = Object.entries(GLOBAL_SHORTCUTS)
-            .map(([combo, id]) => `${combo} → ${id}`)
-            .join('\n');
+          const lines = this.commands()
+            .map((c) => {
+              const combo = comboOfCommand(c.id, this.persisted.settings.shortcutOverrides);
+              return combo ? `${formatCombo(combo)} → ${c.title}` : null;
+            })
+            .filter((line): line is string => Boolean(line));
           void infoDialog({
             title: 'Atajos de teclado',
-            message: lines,
+            message: lines.join('\n'),
           });
         },
       },
@@ -1014,16 +1265,22 @@ export class App implements ViewHost {
 
   private wireShortcuts(): void {
     window.addEventListener('keydown', (e) => {
-      const combo = resolveShortcut(e, { 'Ctrl+=': 'doc.zoomIn' });
-      if (!combo) return;
-      const cmd = this.commandById(combo);
+      // El panel de Ajustes gestiona su propio teclado (captura de atajos).
+      if (isSettingsOpen()) return;
+      const cmdId = resolveShortcut(
+        e,
+        { 'Ctrl+=': 'doc.zoomIn' },
+        this.persisted.settings.shortcutOverrides,
+      );
+      if (!cmdId) return;
+      const cmd = this.commandById(cmdId);
       if (!cmd) return;
       if (cmd.enabled && !cmd.enabled()) return;
       const target = e.target as HTMLElement | null;
       const typing = Boolean(
         target?.closest?.('input, textarea, .cm-editor, [contenteditable="true"]'),
       );
-      if (typing && !TYPING_ALLOWED.has(combo)) return;
+      if (typing && !TYPING_ALLOWED.has(cmdId)) return;
       e.preventDefault();
       void cmd.run();
     });

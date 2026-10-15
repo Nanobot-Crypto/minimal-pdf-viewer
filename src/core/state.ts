@@ -1,6 +1,7 @@
-/** Estado persistente: tema, recientes, favoritos y sesión. */
+/** Estado persistente: tema, recientes, favoritos, sesión y ajustes. */
 
 import { bridge } from './bridge';
+import { normalizeSettings } from './settings';
 import type { FavoriteEntry, PersistedState, RecentEntry, SessionTab, Tab } from './types';
 
 const MAX_RECENTS = 12;
@@ -16,6 +17,7 @@ export function defaultState(): PersistedState {
     favorites: [],
     session: [],
     activeIndex: 0,
+    settings: normalizeSettings(null),
   };
 }
 
@@ -30,6 +32,7 @@ export function parseState(json: string | null): PersistedState {
       recents: Array.isArray(raw.recents) ? raw.recents.slice(0, MAX_RECENTS) : [],
       favorites: Array.isArray(raw.favorites) ? raw.favorites : [],
       session: Array.isArray(raw.session) ? raw.session : [],
+      settings: normalizeSettings(raw.settings),
     };
   } catch {
     return defaultState();

@@ -132,11 +132,14 @@ export class PdfDocView {
         this.total = total;
         this.thumbs?.setCurrent(page);
         this.updateStatus();
+        this.recordPosition();
         this.vh.stateChanged();
       },
       onZoomChange: (pct) => {
-        this.tab.zoom = this.pdf.getZoom();
+        // Se guarda el modo de ajuste (ancho/página/escala), no solo el valor.
+        this.tab.zoom = this.pdf.getZoomMode();
         this.updateStatus(pct);
+        this.recordPosition();
         this.vh.stateChanged();
       },
       onSearchStats: (s) => this.updateFindCount(s),
@@ -344,6 +347,22 @@ export class PdfDocView {
     this.pdf.rotate();
     this.tab.rotation = this.pdf.getRotation();
     this.vh.stateChanged();
+  }
+
+  /**
+   * Registra la posición de lectura (página, zoom y ajuste) en el almacén
+   * local por documento. Es lo que permite retomar el PDF donde se dejó.
+   */
+  private recordPosition(): void {
+    const mode = this.pdf.getZoomMode();
+    this.vh.recordPdfPosition({
+      docId: this.fileId,
+      docName: this.name,
+      page: this.tab.page,
+      total: this.total,
+      zoom: this.pdf.getZoom(),
+      fit: mode === 'page-width' || mode === 'page-fit' ? mode : 'custom',
+    });
   }
 
   /* ---------- Panel lateral ---------- */
@@ -569,7 +588,8 @@ export class PdfDocView {
   saveState(): void {
     this.tab.scrollTop = this.pdf.getScrollTop();
     this.tab.rotation = this.pdf.getRotation();
-    this.tab.zoom = this.pdf.getZoom();
+    this.tab.zoom = this.pdf.getZoomMode();
+    this.recordPosition();
   }
 
   dispose(): void {

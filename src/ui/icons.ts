@@ -40,6 +40,8 @@ export const icons = {
   winMax: `<svg ${S}><rect x="4" y="4" width="8" height="8" rx="1"/></svg>`,
   winRestore: `<svg ${S}><rect x="3.5" y="5.5" width="7" height="7" rx="1"/><path d="M6 5.5V4.5a1 1 0 0 1 1-1h4.5a1 1 0 0 1 1 1V9a1 1 0 0 1-1 1h-1"/></svg>`,
   winClose: `<svg ${S}><path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/></svg>`,
+  // Ajustes (controles deslizantes: distinto del icono de tema).
+  settings: `<svg ${S}><path d="M2 4.5h4M10 4.5h4M2 11.5h4M10 11.5h4"/><circle cx="8" cy="4.5" r="1.9"/><circle cx="8" cy="11.5" r="1.9"/></svg>`,
 };
 
 export function icon(name: keyof typeof icons): SVGElement {

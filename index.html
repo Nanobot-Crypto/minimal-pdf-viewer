@@ -17,6 +17,7 @@
         <div id="tabstrip" role="tablist" aria-label="Documentos abiertos" data-tauri-drag-region></div>
         <div class="topbar-right">
           <button id="btn-palette" class="icon-btn" title="Paleta de comandos (Ctrl+K)" aria-label="Paleta de comandos"></button>
+          <button id="btn-settings" class="icon-btn" title="Ajustes (Ctrl+,)" aria-label="Ajustes"></button>
           <button id="btn-theme" class="icon-btn" title="Cambiar tema" aria-label="Cambiar tema"></button>
           <!-- Controles de ventana (solo escritorio; estilo GNOME) -->
           <div id="window-controls" hidden>
@@ -49,6 +50,7 @@
     <div class="resize-handle" data-resize="SouthWest" hidden></div>
     <div id="drop-overlay" hidden>Suelta para abrir el documento</div>
     <div id="palette-overlay" hidden></div>
+    <div id="settings-overlay" hidden></div>
     <div id="menu-layer"></div>
     <div id="dialog-layer"></div>
     <script type="module" src="/src/main.ts"></script>

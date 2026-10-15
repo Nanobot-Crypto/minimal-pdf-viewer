@@ -1,5 +1,7 @@
 /** Tipos compartidos de Vela. */
 
+import type { AppSettings } from './settings';
+
 export type DocKind = 'pdf' | 'md';
 
 export interface PickedFile {
@@ -66,6 +68,8 @@ export interface PersistedState {
   favorites: FavoriteEntry[];
   session: SessionTab[];
   activeIndex: number;
+  /** Ajustes (tipografía, acento, atajos, autoguardado). */
+  settings: AppSettings;
 }
 
 export interface Tab {

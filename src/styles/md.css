@@ -51,10 +51,10 @@
   flex: 1 1 100%;
 }
 
-/* Tipografía de lectura */
+/* Tipografía de lectura (la fijan los Ajustes) */
 .md-preview {
-  font-family: var(--font-read);
-  font-size: 16.5px;
+  font-family: var(--md-preview-font, var(--font-read));
+  font-size: var(--md-preview-size, 16.5px);
   line-height: 1.72;
   color: var(--fg);
 }

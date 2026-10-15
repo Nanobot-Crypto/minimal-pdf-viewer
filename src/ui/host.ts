@@ -2,6 +2,19 @@
 
 import type { FavoriteEntry } from '../core/types';
 import type { NoteEntry, NoteInput } from '../core/notes';
+import type { AppSettings } from '../core/settings';
+import type { PdfFitMode } from '../core/docstore';
+
+export interface PdfPositionInput {
+  docId: string;
+  docName: string;
+  page: number;
+  total: number;
+  /** Escala real del visor (0,15–5). */
+  zoom: number;
+  /** Modo de ajuste vigente: ancho, página o escala fija. */
+  fit: PdfFitMode;
+}
 
 export interface ViewHost {
   setStatus(parts: { left?: string; right?: string }): void;
@@ -18,6 +31,14 @@ export interface ViewHost {
   removeNote(id: string): void;
   /** Traslada las notas a otro documento (tras «Guardar como»). */
   rekeyNotes(fromId: string, toId: string, toName: string): void;
+  /** Guarda la posición de lectura de un PDF (por documento, en local). */
+  recordPdfPosition(input: PdfPositionInput): void;
+  /** Aviso de cambios en un Markdown: actualiza el borrador de recuperación. */
+  mdDraftChanged(docId: string, docName: string, text: string): void;
+  /** Descarta el borrador de recuperación de un documento. */
+  clearDraft(docId: string): void;
+  /** Ajustes vigentes (tipografía, acento, atajos, autoguardado). */
+  getSettings(): AppSettings;
   /** Avisa de que el estado debe persistirse (con debounce). */
   stateChanged(): void;
   /** Avisa de que las pestañas deben redibujarse (indicador «sin guardar», etc.). */

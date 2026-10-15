@@ -13,7 +13,9 @@ instalarlas. El frontend sí se construye (`npm run build`), se prueba
 
 Riesgo residual: errores de compilación menores en `src-tauri/` al primer
 `cargo build` en una máquina con el toolchain completo. No hay riesgo de diseño
-conocido.
+conocido. En esta tanda se añadieron dos comandos nuevos (`vela_load_docstore`,
+`vela_save_docstore`) con la misma forma que `vela_load_notes`/`vela_save_notes`;
+siguen sin compilar en este entorno por el mismo motivo.
 
 ## Impresión y exportación a PDF
 
@@ -72,21 +74,75 @@ conocido.
 
 ## Interfaz
 
-- Sin personalización de temas propios más allá de claro/oscuro/sistema.
+- Tema claro/oscuro/sistema **con color de acento** (seis opciones) y tipografía
+  del editor y la previsualización configurables desde Ajustes. No hay temas
+  completos propios ni importación de estilos CSS externos.
 - Sin arranque minimizado, bandeja del sistema ni «siempre visible».
 - El reordenado de pestañas usa arrastre nativo HTML5 (funcional, algo menos fluido
   que un implementado con punteros).
 - La paleta de comandos no incluye búsqueda de texto dentro de documentos abiertos
   (el buscador de cada documento cubre ese caso).
 
+## Posición de lectura (PDF)
+
+- La posición (página, zoom y modo de ajuste) se guarda **por identificador de
+  documento**: ruta absoluta en escritorio, clave `nombre+tamaño+fecha` en
+  navegador. Si el archivo se mueve o renombra, la posición anterior no se
+  encuentra y el documento se abre al principio (no falla: simplemente no hay
+  nada que restaurar).
+- Si el contenido del PDF cambió (más/menos páginas), la página restaurada se
+  recorta al total real; puede que la posición ya no tenga sentido para el
+  documento nuevo, pero nunca impide abrirlo.
+- No se guarda el desplazamiento fino dentro de la página ni el documento cifrado
+  con contraseña (sí página/zoom, una vez abierto).
+
+## Autoguardado y borradores (Markdown)
+
+- Los borradores de recuperación se guardan en un almacén local propio
+  (`vela-docstore.json` / `localStorage`), **nunca** en el archivo original, con
+  escritura al dejar de escribir (~1 s), un repaso cada 15 s y al cerrar. Si el
+  proceso muere en el instante justo de escribir, se puede perder el último
+  segundo de edición.
+- Cerrar una pestaña con cambios sin guardar conserva el borrador (red de
+  seguridad); se ofrece «Restaurar borrador / Descartar» al reabrir el documento.
+  El borrador se elimina al guardar el archivo o al pulsar «Descartar».
+- «Autoguardar en el archivo» está **desactivado por defecto** y solo se activa
+  con confirmación explícita. Una vez activo, escribe en el archivo sin pedir
+  confirmación en cada guardado (la confirmación inicial es la autorización).
+  En modo navegador sin File System Access API, cada guardado puede caer en la
+  descarga del navegador (limitación ya documentada para «Guardar»).
+
+## Ajustes y atajos
+
+- La captura de atajos usa el teclado: no se pueden asignar botones del ratón
+  ni la tecla Esc (Esc cierra el diálogo de captura).
+- Los atajos son globales por comando: no hay atajos por contexto (PDF/Markdown)
+  más allá de la disponibilidad del comando, ni perfiles de usuario.
+- El tamaño de fuente se elige entre 10–28 px (editor) y 12–30 px (vista previa),
+  y la fuente entre pila local del sistema: no se descargan fuentes externas.
+
 ## Pruebas
 
-- Unitarias: lógica de pestañas, estado/sesión, atajos, coincidencia difusa y
-  pipeline Markdown.
+- Unitarias: lógica de pestañas, estado/sesión (incluidos ajustes), atajos
+  (con reasignaciones y conflictos), coincidencia difusa, pipeline Markdown y
+  el almacén por documento (posiciones y borradores: saneado, recortes y
+  persistencia).
 - E2E (Playwright, modo navegador): estado vacío y recientes, PDF (render,
   navegación, zoom, búsqueda, miniaturas), Markdown (edición, previsualización,
   modos), paleta + tema oscuro, pestañas (cambios sin guardar, confirmación de
-  cierre, menú contextual).
+  cierre, menú contextual), posición de lectura del PDF, borradores de
+  recuperación, autoguardado en archivo y panel de Ajustes (tema, acento,
+  tipografía, reasignación de atajos con conflictos y restablecer).
+- **E2E pendientes (preexistentes a esta tanda):** los 4 tests de
+  `tests/e2e/vela-mejoras.spec.ts` que dependen de que el panel lateral esté
+  abierto sin abrirlo («paleta: las opciones ejecutan su función…», «esquema
+  Markdown…», «notas PDF…», «notas Markdown…») fallan también en el commit
+  `d19edcb` (Vela 0.2.0) sin cambios: esperan una autoapertura del panel lateral
+  que la aplicación nunca implementó, y sus expectativas son contradictorias
+  entre sí sobre el estado inicial del panel (unos lo quieren abierto y otro
+  cerrado tras el mismo flujo). Requieren decidir el comportamiento deseado del
+  panel lateral y ajustar tests o app: queda fuera de esta tanda.
 - No automatizadas (requieren empaquetar): diálogos nativos, asociaciones de
   archivo, impresión real, drag & drop desde el explorador del sistema,
-  rendimiento con PDFs de 500+ páginas.
+  rendimiento con PDFs de 500+ páginas y los comandos Rust nuevos de
+  `vela-docstore.json`.

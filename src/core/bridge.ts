@@ -59,6 +59,12 @@ export interface Bridge {
   /** Notas del usuario (almacén separado del documento original). */
   loadNotes(): Promise<string | null>;
   saveNotes(json: string): Promise<void>;
+  /**
+   * Estado por documento (posiciones de lectura y borradores de recuperación).
+   * Mismo mecanismo que las notas: JSON local, nunca toca los documentos.
+   */
+  loadDocStore(): Promise<string | null>;
+  saveDocStore(json: string): Promise<void>;
   /** Diálogo "Guardar como". No escribe nada: solo resuelve la ruta destino. */
   resolveSaveTarget(defaultName: string, filters: OpenFilter[]): Promise<PickedFile | null>;
   loadState(): Promise<string | null>;
@@ -175,6 +181,14 @@ const tauriBridge: Bridge = {
   async saveNotes(json) {
     const invoke = await getInvoke();
     await invoke('vela_save_notes', { json });
+  },
+  async loadDocStore() {
+    const invoke = await getInvoke();
+    return (await invoke('vela_load_docstore')) as string | null;
+  },
+  async saveDocStore(json) {
+    const invoke = await getInvoke();
+    await invoke('vela_save_docstore', { json });
   },
   async resolveSaveTarget(defaultName, filters) {
     const { save } = await import('@tauri-apps/plugin-dialog');
@@ -423,6 +437,20 @@ const browserBridge: Bridge = {
       localStorage.setItem('vela.notes', json);
     } catch {
       /* cuota agotada: las notas siguen en memoria */
+    }
+  },
+  async loadDocStore() {
+    try {
+      return localStorage.getItem('vela.docstore');
+    } catch {
+      return null;
+    }
+  },
+  async saveDocStore(json) {
+    try {
+      localStorage.setItem('vela.docstore', json);
+    } catch {
+      /* cuota agotada: las posiciones y borradores siguen en memoria */
     }
   },
   async resolveSaveTarget(defaultName) {

@@ -133,6 +133,33 @@ fn vela_save_notes(app: tauri::AppHandle, json: String) -> Result<(), String> {
     fs::write(p, json).map_err(|e| format!("No se pudieron guardar las notas: {e}"))
 }
 
+/// Posiciones de lectura y borradores de recuperación: almacén propio en el
+/// directorio de la aplicación (mismo mecanismo que las notas). Nunca se
+/// escribe dentro de los documentos del usuario.
+fn docstore_file(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    let dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|e| format!("Directorio de configuración no disponible: {e}"))?;
+    let _ = fs::create_dir_all(&dir);
+    Ok(dir.join("vela-docstore.json"))
+}
+
+#[tauri::command]
+fn vela_load_docstore(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    let p = docstore_file(&app)?;
+    match fs::read_to_string(p) {
+        Ok(json) => Ok(Some(json)),
+        Err(_) => Ok(None),
+    }
+}
+
+#[tauri::command]
+fn vela_save_docstore(app: tauri::AppHandle, json: String) -> Result<(), String> {
+    let p = docstore_file(&app)?;
+    fs::write(p, json).map_err(|e| format!("No se pudo guardar el estado por documento: {e}"))
+}
+
 #[tauri::command]
 fn vela_load_state(app: tauri::AppHandle) -> Result<Option<String>, String> {
     let p = state_file(&app)?;
@@ -193,6 +220,8 @@ fn main() {
             vela_save_state,
             vela_load_notes,
             vela_save_notes,
+            vela_load_docstore,
+            vela_save_docstore,
             vela_open_with_system,
             vela_startup_files,
         ])

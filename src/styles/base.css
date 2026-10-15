@@ -18,7 +18,11 @@
   --rule: #c6c6c0;
   --accent: #0b57d0;
   --accent-soft: rgba(11, 87, 208, 0.1);
+  --accent-sel: rgba(11, 87, 208, 0.22);
   --accent-fg: #ffffff;
+  /* Tipografía Markdown: la fijan los Ajustes (vacío = predeterminada). */
+  --md-editor-size: 14px;
+  --md-preview-size: 16.5px;
   --danger: #b3261e;
   --shadow: 0 6px 24px rgba(0, 0, 0, 0.12);
   --radius: 8px;
@@ -37,9 +41,77 @@ html[data-theme='dark'] {
   --rule: #454a53;
   --accent: #8ab4ff;
   --accent-soft: rgba(138, 180, 255, 0.14);
+  --accent-sel: rgba(138, 180, 255, 0.28);
   --accent-fg: #10131a;
   --danger: #f2b8b5;
   --shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+}
+
+/* ---------------- Colores de acento (Ajustes) ---------------- */
+
+html[data-accent='green'] {
+  --accent: #1a7f4b;
+  --accent-soft: rgba(26, 127, 75, 0.12);
+  --accent-sel: rgba(26, 127, 75, 0.22);
+  --accent-fg: #ffffff;
+}
+html[data-theme='dark'][data-accent='green'] {
+  --accent: #7ee0b8;
+  --accent-soft: rgba(126, 224, 184, 0.16);
+  --accent-sel: rgba(126, 224, 184, 0.3);
+  --accent-fg: #10131a;
+}
+
+html[data-accent='teal'] {
+  --accent: #00796b;
+  --accent-soft: rgba(0, 121, 107, 0.12);
+  --accent-sel: rgba(0, 121, 107, 0.22);
+  --accent-fg: #ffffff;
+}
+html[data-theme='dark'][data-accent='teal'] {
+  --accent: #80cbc4;
+  --accent-soft: rgba(128, 203, 196, 0.16);
+  --accent-sel: rgba(128, 203, 196, 0.3);
+  --accent-fg: #10131a;
+}
+
+html[data-accent='plum'] {
+  --accent: #6f42c1;
+  --accent-soft: rgba(111, 66, 193, 0.12);
+  --accent-sel: rgba(111, 66, 193, 0.22);
+  --accent-fg: #ffffff;
+}
+html[data-theme='dark'][data-accent='plum'] {
+  --accent: #c4a2ff;
+  --accent-soft: rgba(196, 162, 255, 0.16);
+  --accent-sel: rgba(196, 162, 255, 0.3);
+  --accent-fg: #10131a;
+}
+
+html[data-accent='orange'] {
+  --accent: #b3541e;
+  --accent-soft: rgba(179, 84, 30, 0.12);
+  --accent-sel: rgba(179, 84, 30, 0.22);
+  --accent-fg: #ffffff;
+}
+html[data-theme='dark'][data-accent='orange'] {
+  --accent: #ffb77a;
+  --accent-soft: rgba(255, 183, 122, 0.16);
+  --accent-sel: rgba(255, 183, 122, 0.3);
+  --accent-fg: #10131a;
+}
+
+html[data-accent='red'] {
+  --accent: #c62828;
+  --accent-soft: rgba(198, 40, 40, 0.12);
+  --accent-sel: rgba(198, 40, 40, 0.22);
+  --accent-fg: #ffffff;
+}
+html[data-theme='dark'][data-accent='red'] {
+  --accent: #ff9e9e;
+  --accent-soft: rgba(255, 158, 158, 0.16);
+  --accent-sel: rgba(255, 158, 158, 0.3);
+  --accent-fg: #10131a;
 }
 
 * {
@@ -953,6 +1025,226 @@ body {
   color: var(--fg-faint);
   padding: 16px;
   text-align: center;
+}
+
+/* ---------------- Panel de Ajustes ---------------- */
+
+#settings-overlay {
+  position: fixed;
+  inset: 0;
+  /* Por debajo de los diálogos (70): la captura de atajos se superpone. */
+  z-index: 65;
+  background: rgba(0, 0, 0, 0.22);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 5vh 16px;
+}
+
+#settings-overlay[hidden] {
+  display: none;
+}
+
+.settings-panel {
+  width: min(680px, 100%);
+  max-height: 90vh;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.settings-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.settings-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.settings-body {
+  overflow-y: auto;
+  padding: 2px 18px 18px;
+}
+
+.settings-section {
+  padding: 10px 0 2px;
+}
+
+.settings-section-title {
+  margin: 0 0 4px;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 7px 0;
+}
+
+.settings-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.settings-hint {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--fg-faint);
+  max-width: 46ch;
+}
+
+.settings-select {
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  color: var(--fg);
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 5px 8px;
+  min-width: 190px;
+}
+
+.settings-size-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.settings-range {
+  width: 180px;
+  accent-color: var(--accent);
+}
+
+.settings-size {
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  color: var(--fg-muted);
+  min-width: 44px;
+  text-align: right;
+}
+
+.settings-check {
+  accent-color: var(--accent);
+  width: 16px;
+  height: 16px;
+}
+
+.accent-swatches {
+  display: flex;
+  gap: 8px;
+}
+
+.accent-swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  background: var(--swatch);
+  cursor: pointer;
+  padding: 0;
+}
+
+.accent-swatch.active {
+  border-color: var(--fg);
+}
+
+.shortcut-list {
+  border-top: 1px solid var(--border);
+  margin-top: 10px;
+  padding-bottom: 8px;
+}
+
+.shortcut-group {
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+  padding: 12px 0 2px;
+}
+
+.shortcut-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 0;
+}
+
+.shortcut-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.shortcut-title {
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shortcut-conflict {
+  font-size: 11px;
+  color: var(--danger);
+}
+
+.shortcut-combo {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  padding: 3px 9px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-sunken);
+  color: var(--fg-muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.shortcut-combo:hover {
+  border-color: var(--rule);
+  color: var(--fg);
+}
+
+.shortcut-combo.empty {
+  font-style: italic;
+  opacity: 0.75;
+}
+
+.shortcut-combo.conflict {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.shortcut-capture-display {
+  font-family: var(--font-mono);
+  font-size: 16px;
+  text-align: center;
+  padding: 12px;
+  margin: 10px 0 2px;
+  border: 1px dashed var(--rule);
+  border-radius: 8px;
+  background: var(--bg-sunken);
 }
 
 /* ---------------- Superposición de arrastre ---------------- */

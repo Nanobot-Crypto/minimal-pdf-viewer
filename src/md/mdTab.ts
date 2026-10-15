@@ -88,17 +88,7 @@ export class MdDocView {
       editorHost,
       this.text,
       {
-        onDocChanged: (text, cursor) => {
-          this.text = text;
-          this.tab.draft = text;
-          this.tab.dirty = this.savedText === null ? true : text !== this.savedText;
-          this.tab.cursor = cursor;
-          this.renderPreview();
-          this.updateStatus();
-          this.vh.tabsChanged();
-          this.vh.stateChanged();
-          this.refreshOutlineIfChanged();
-        },
+        onDocChanged: (text, cursor) => this.handleDocChanged(text, cursor),
         onCursorChanged: (cursor) => {
           this.tab.cursor = cursor;
         },
@@ -111,6 +101,21 @@ export class MdDocView {
     this.renderPreview();
     this.updateStatus();
     this.buildSidebar();
+  }
+
+  /** Cambios del editor: estado de la pestaña, borrador de recuperación y vista. */
+  private handleDocChanged(text: string, cursor: number): void {
+    this.text = text;
+    this.tab.draft = text;
+    this.tab.dirty = this.savedText === null ? true : text !== this.savedText;
+    this.tab.cursor = cursor;
+    this.renderPreview();
+    this.updateStatus();
+    this.vh.tabsChanged();
+    this.vh.stateChanged();
+    // Borrador de recuperación (autoguardado): nunca toca el archivo original.
+    this.vh.mdDraftChanged(this.fileId, this.name, text);
+    this.refreshOutlineIfChanged();
   }
 
   /** Sincroniza el desplazamiento del editor con la previsualización. */
@@ -168,6 +173,9 @@ export class MdDocView {
 
   /** Actualiza la referencia de archivo tras «Guardar como». */
   setFileRef(fileId: string, name: string): void {
+    // El contenido ya está guardado en el destino: el borrador de recuperación
+    // del archivo anterior ya no aporta nada.
+    this.vh.clearDraft(this.fileId);
     this.vh.rekeyNotes(this.fileId, fileId, name);
     this.fileId = fileId;
     this.name = name;
@@ -188,17 +196,7 @@ export class MdDocView {
       host,
       this.text,
       {
-        onDocChanged: (text, cursor) => {
-          this.text = text;
-          this.tab.draft = text;
-          this.tab.dirty = this.savedText === null ? true : text !== this.savedText;
-          this.tab.cursor = cursor;
-          this.renderPreview();
-          this.updateStatus();
-          this.vh.tabsChanged();
-          this.vh.stateChanged();
-          this.refreshOutlineIfChanged();
-        },
+        onDocChanged: (text, cursor) => this.handleDocChanged(text, cursor),
         onCursorChanged: (cursor) => {
           this.tab.cursor = cursor;
         },
@@ -232,6 +230,8 @@ export class MdDocView {
     this.savedText = this.text;
     this.tab.dirty = false;
     this.tab.draft = undefined;
+    // El archivo ya contiene este texto: el borrador de recuperación sobra.
+    this.vh.clearDraft(this.fileId);
     this.updateStatus();
     this.vh.tabsChanged();
   }

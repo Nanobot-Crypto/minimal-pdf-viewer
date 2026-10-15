@@ -2,6 +2,7 @@
 
 import * as pdfjs from 'pdfjs-dist';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
+import { clampPage } from '../core/docstore';
 import {
   EventBus,
   PDFFindController,
@@ -46,6 +47,8 @@ export class PdfView {
   private container!: HTMLDivElement;
   private total = 0;
   private searchQuery = '';
+  /** Último modo de ajuste solicitado (página/ancho/escala fija). */
+  private zoomMode: ZoomMode = 'page-width';
 
   constructor(private host: HTMLElement, private cb: PdfViewCallbacks) {
     this.eventBus = new EventBus();
@@ -144,7 +147,9 @@ export class PdfView {
   }
 
   gotoPage(page: number): void {
-    const n = Math.min(Math.max(1, Math.round(page)), this.total || 1);
+    // Si el documento cambió (menos páginas), la página se recorta al total
+    // real: la navegación nunca falla por una posición guardada desfasada.
+    const n = clampPage(page, this.total || 1);
     this.viewer.scrollPageIntoView({ pageNumber: n });
   }
 
@@ -157,8 +162,14 @@ export class PdfView {
   }
 
   setZoom(mode: ZoomMode): void {
+    this.zoomMode = mode;
     if (typeof mode === 'number') this.viewer.currentScale = mode;
     else this.viewer.currentScaleValue = mode;
+  }
+
+  /** Modo de ajuste vigente: 'page-width', 'page-fit' o una escala fija. */
+  getZoomMode(): ZoomMode {
+    return this.zoomMode;
   }
 
   getZoom(): number {

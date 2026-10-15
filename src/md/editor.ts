@@ -35,7 +35,7 @@ const lightHighlight = HighlightStyle.define([
   },
   { tag: tags.emphasis, fontStyle: 'italic' },
   { tag: tags.strong, fontWeight: '700' },
-  { tag: tags.link, color: '#0b57d0' },
+  { tag: tags.link, color: 'var(--accent)' },
   { tag: tags.url, color: '#5f6368' },
   { tag: tags.monospace, color: '#0f6b45', fontFamily: 'var(--font-mono)' },
   { tag: tags.quote, color: '#6b6b70', fontStyle: 'italic' },
@@ -53,7 +53,7 @@ const darkHighlight = HighlightStyle.define([
   },
   { tag: tags.emphasis, fontStyle: 'italic' },
   { tag: tags.strong, fontWeight: '700' },
-  { tag: tags.link, color: '#8ab4ff' },
+  { tag: tags.link, color: 'var(--accent)' },
   { tag: tags.url, color: '#9a9aa2' },
   { tag: tags.monospace, color: '#7ee0b8', fontFamily: 'var(--font-mono)' },
   { tag: tags.quote, color: '#9a9aa2', fontStyle: 'italic' },
@@ -62,16 +62,22 @@ const darkHighlight = HighlightStyle.define([
 ]);
 
 const lightTheme = EditorView.theme({
-  '&': { color: '#1c1c1e', backgroundColor: 'transparent', height: '100%', fontSize: '14px' },
+  // Fuente y tamaño vienen de los Ajustes (variables CSS con respaldo).
+  '&': {
+    color: '#1c1c1e',
+    backgroundColor: 'transparent',
+    height: '100%',
+    fontSize: 'var(--md-editor-size, 14px)',
+  },
   '.cm-content': {
-    fontFamily: 'var(--font-mono)',
+    fontFamily: 'var(--md-editor-font, var(--font-mono))',
     padding: '18px 14px 60vh 14px',
     caretColor: '#1c1c1e',
   },
   '.cm-gutters': { backgroundColor: 'transparent', color: '#8f9098', border: 'none' },
-  '.cm-activeLine': { backgroundColor: 'rgba(11, 87, 208, 0.05)' },
+  '.cm-activeLine': { backgroundColor: 'var(--accent-soft)' },
   '.cm-selectionBackground, &.cm-focused .cm-selectionBackground': {
-    backgroundColor: 'rgba(11, 87, 208, 0.18)',
+    backgroundColor: 'var(--accent-sel)',
   },
   '.cm-panels': { backgroundColor: '#f6f6f4', color: '#1c1c1e' },
   '.cm-panels input': {
@@ -84,16 +90,21 @@ const lightTheme = EditorView.theme({
 });
 
 const darkTheme = EditorView.theme({
-  '&': { color: '#e6e6ea', backgroundColor: 'transparent', height: '100%', fontSize: '14px' },
+  '&': {
+    color: '#e6e6ea',
+    backgroundColor: 'transparent',
+    height: '100%',
+    fontSize: 'var(--md-editor-size, 14px)',
+  },
   '.cm-content': {
-    fontFamily: 'var(--font-mono)',
+    fontFamily: 'var(--md-editor-font, var(--font-mono))',
     padding: '18px 14px 60vh 14px',
     caretColor: '#e6e6ea',
   },
   '.cm-gutters': { backgroundColor: 'transparent', color: '#71727c', border: 'none' },
-  '.cm-activeLine': { backgroundColor: 'rgba(138, 180, 255, 0.06)' },
+  '.cm-activeLine': { backgroundColor: 'var(--accent-soft)' },
   '.cm-selectionBackground, &.cm-focused .cm-selectionBackground': {
-    backgroundColor: 'rgba(138, 180, 255, 0.22)',
+    backgroundColor: 'var(--accent-sel)',
   },
   '.cm-panels': { backgroundColor: '#22252b', color: '#e6e6ea' },
   '.cm-panels input': {

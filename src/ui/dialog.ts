@@ -25,7 +25,13 @@ function shell(): HTMLElement {
   return el('div', { class: 'dialog-backdrop' });
 }
 
-export function confirmDialog(opts: DialogOpts): Promise<boolean> {
+export type DialogChoice = 'confirm' | 'cancel' | 'dismiss';
+
+/**
+ * Como `confirmDialog`, pero distingue el cierre sin decidir (Esc o clic
+ * fuera) de la cancelación explícita: útil cuando «cancelar» borra datos.
+ */
+export function confirmDialogEx(opts: DialogOpts): Promise<DialogChoice> {
   return new Promise((resolve) => {
     const backdrop = shell();
     const btnConfirm = el('button', {
@@ -33,17 +39,17 @@ export function confirmDialog(opts: DialogOpts): Promise<boolean> {
       text: opts.confirmText ?? 'Aceptar',
     });
     const btnCancel = el('button', { class: 'btn', text: opts.cancelText ?? 'Cancelar' });
-    const finish = (v: boolean) => {
+    const finish = (v: DialogChoice) => {
       close(backdrop);
       resolve(v);
     };
-    btnConfirm.addEventListener('click', () => finish(true));
-    btnCancel.addEventListener('click', () => finish(false));
+    btnConfirm.addEventListener('click', () => finish('confirm'));
+    btnCancel.addEventListener('click', () => finish('cancel'));
     backdrop.addEventListener('click', (e) => {
-      if (e.target === backdrop) finish(false);
+      if (e.target === backdrop) finish('dismiss');
     });
     backdrop.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') finish(false);
+      if (e.key === 'Escape') finish('dismiss');
     });
     backdrop.append(
       el(
@@ -57,6 +63,10 @@ export function confirmDialog(opts: DialogOpts): Promise<boolean> {
     layer().append(backdrop);
     btnConfirm.focus();
   });
+}
+
+export function confirmDialog(opts: DialogOpts): Promise<boolean> {
+  return confirmDialogEx(opts).then((choice) => choice === 'confirm');
 }
 
 export function infoDialog(opts: { title: string; message: string }): Promise<void> {
