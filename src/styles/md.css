@@ -29,7 +29,9 @@
   flex: 1 1 50%;
   min-width: 0;
   overflow: auto;
-  padding: 26px 34px 40vh;
+  /* Margen inferior ≥ alto de la vista: cualquier encabezado (incluido el
+     último) puede alinearse al inicio con el clic del esquema. */
+  padding: 26px 34px calc(100vh - 120px);
   background: var(--bg-elev);
 }
 

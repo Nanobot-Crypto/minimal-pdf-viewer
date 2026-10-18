@@ -53,6 +53,7 @@ import { icon } from './ui/icons';
 import { confirmDialog, confirmDialogEx, infoDialog } from './ui/dialog';
 import { showContextMenu } from './ui/contextMenu';
 import { initTitlebar } from './ui/titlebar';
+import { wireZoomGestures as installZoomGestures, wireZoomHotkeyGuard } from './ui/zoomGestures';
 import {
   isSettingsOpen,
   openSettingsPanel,
@@ -155,6 +156,7 @@ export class App implements ViewHost, SettingsHost {
 
     this.wireTopbar();
     this.wireShortcuts();
+    this.wireZoomGestures();
     this.wireDragAndDrop();
     this.wireTabStrip();
     void initTitlebar();
@@ -1261,6 +1263,32 @@ export class App implements ViewHost, SettingsHost {
 
   private commandById(id: string): Command | undefined {
     return this.commands().find((c) => c.id === id);
+  }
+
+  /**
+   * Zoom con el pellizco del trackpad y con Ctrl+rueda.
+   *
+   * Nunca se escala la interfaz del webview (en WebKitGTK el pellizco ampliaba
+   * toda la aplicación y desaparecían las barras). Sobre el documento PDF el
+   * gesto se convierte en zoom del documento, con sus límites.
+   */
+  private wireZoomGestures(): void {
+    // Ctrl++, Ctrl+- y Ctrl+0: nunca zoom nativo del webview (el zoom del
+    // documento lo disparan los comandos doc.zoomIn/Out/Reset registrados).
+    wireZoomHotkeyGuard(window);
+    installZoomGestures(window, {
+      onZoom: (factor) => {
+        const tab = this.activeTab();
+        if (tab?.kind !== 'pdf') return;
+        this.loaded.get(tab.id)?.pdf?.zoomBy(factor);
+      },
+      isDocumentTarget: (target) => {
+        const tab = this.activeTab();
+        if (tab?.kind !== 'pdf' || !this.loaded.get(tab.id)?.pdf) return false;
+        const node = target as HTMLElement | null;
+        return Boolean(node?.closest?.('.doc-pdf'));
+      },
+    });
   }
 
   private wireShortcuts(): void {

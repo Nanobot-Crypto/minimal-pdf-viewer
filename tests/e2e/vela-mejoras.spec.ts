@@ -21,6 +21,17 @@ async function openDoc(page: Page, file: string, trigger?: string): Promise<void
   await fc.setFiles(path.join(fixtures, file));
 }
 
+/**
+ * Deja el panel lateral ABIERTO con independencia del estado persistido
+ * (el arranque es con el panel cerrado, pero el estado se persiste y tras
+ * recargar puede llegar abierto: las pruebas no deben asumir ninguno).
+ */
+async function ensureSidebarOpen(page: Page): Promise<void> {
+  const closed = await page.locator('#sidebar').evaluate((el) => el.classList.contains('closed'));
+  if (closed) await page.locator('#btn-sidebar').click();
+  await expect(page.locator('#sidebar')).not.toHaveClass(/closed/);
+}
+
 /* ------------------------------------------------------------------ */
 /* Fallo 2: paleta de comandos                                         */
 /* ------------------------------------------------------------------ */
@@ -38,7 +49,9 @@ test('paleta: las opciones ejecutan su función al hacer clic', async ({ page })
   await item.click();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
 
-  // Una segunda opción también funciona con clic.
+  // Una segunda opción también funciona con clic. Se parte de un estado
+  // conocido (panel abierto) para que el conmutador lo cierre.
+  await ensureSidebarOpen(page);
   await page.locator('#btn-palette').click();
   const sidebarItem = page.locator('.palette-item', { hasText: 'Mostrar/ocultar panel lateral' });
   await sidebarItem.hover();
@@ -151,6 +164,7 @@ test('esquema Markdown: el clic desplaza sin cambiar el modo de vista', async ({
   // Modo solo lectura: el clic no debe abrir la vista dividida.
   await page.getByRole('button', { name: 'Leer', exact: true }).click();
   await expect(page.locator('.md-editor-host')).toBeHidden();
+  await ensureSidebarOpen(page);
   await page.locator('#sidebar-tabs .seg-btn', { hasText: 'Esquema' }).click();
   await expect(page.locator('.outline-row').first()).toBeVisible();
   await page.locator('.outline-row', { hasText: 'Imagen relativa' }).click();
@@ -193,7 +207,7 @@ test('notas PDF: añadir, ir a la página, persistir y borrar', async ({ page })
   await page.locator('.pdf-toolbar-pageinput').press('Enter');
   await expect(page.locator('#status-right')).toContainText('Página 3 / 5');
 
-  await page.locator('#btn-sidebar').click();
+  await ensureSidebarOpen(page);
   await page.locator('#sidebar-tabs .seg-btn', { hasText: 'Notas' }).click();
   await page.getByRole('button', { name: /^Añadir nota/ }).click();
   await page.locator('.dialog-textarea').fill('Revisar la tabla de la página 3');
@@ -214,7 +228,7 @@ test('notas PDF: añadir, ir a la página, persistir y borrar', async ({ page })
   await page.reload();
   await openDoc(page, 'ejemplo.pdf');
   await expect(page.locator('.pdfViewer .page canvas').first()).toBeVisible({ timeout: 20_000 });
-  await page.locator('#btn-sidebar').click();
+  await ensureSidebarOpen(page);
   await page.locator('#sidebar-tabs .seg-btn', { hasText: 'Notas' }).click();
   await expect(page.locator('.note-text')).toContainText('Revisar la tabla');
 
@@ -229,6 +243,7 @@ test('notas Markdown: añadir, persistir y no tocar el documento', async ({ page
   await openDoc(page, 'notas.md');
   await expect(page.locator('.md-preview h1')).toBeVisible();
 
+  await ensureSidebarOpen(page);
   await page.locator('#sidebar-tabs .seg-btn', { hasText: 'Notas' }).click();
   await page.getByRole('button', { name: 'Añadir nota' }).click();
   await page.locator('.dialog-textarea').fill('Pendiente: revisar el esquema');
@@ -241,6 +256,7 @@ test('notas Markdown: añadir, persistir y no tocar el documento', async ({ page
   await page.waitForTimeout(700);
   await page.reload();
   await openDoc(page, 'notas.md');
+  await ensureSidebarOpen(page);
   await page.locator('#sidebar-tabs .seg-btn', { hasText: 'Notas' }).click();
   await expect(page.locator('.note-text')).toContainText('Pendiente: revisar el esquema');
 });

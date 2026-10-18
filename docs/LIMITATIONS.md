@@ -146,3 +146,28 @@ siguen sin compilar en este entorno por el mismo motivo.
   archivo, impresión real, drag & drop desde el explorador del sistema,
   rendimiento con PDFs de 500+ páginas y los comandos Rust nuevos de
   `vela-docstore.json`.
+
+## Zoom con pellizco en WebKitGTK (Tauri): verificación pendiente
+
+El pellizco del trackpad y Ctrl+rueda se consumen en el lado web (eventos
+`wheel` con `ctrlKey` y gestos de WebKit `gesturestart`/`gesturechange`/
+`gestureend`, todos con `preventDefault`), y en Tauri se desactiva además el
+zoom nativo del webview con `zoomHotkeysEnabled: false` en la ventana. En
+navegador (Chromium) está cubierto por pruebas; **la validación final en
+Debian + WebKitGTK queda pendiente** de ejecutar en un equipo con el bundle de
+Tauri compilado.
+
+## Anotaciones de texto (resaltar/subrayar/tachar) — NO implementadas en esta tanda
+
+Queda pendiente la tanda de anotaciones (herramienta de resaltar/subrayar/tachar
+con colores, barra mínima con deshacer/rehacer y «Guardar copia con
+anotaciones»). Vía elegida para implementarla: el **editor de anotaciones
+propio de pdf.js** (`AnnotationEditorUIManager` + modos de texto de pdfjs-dist
+4.x), porque ya dibuja la selección de texto con los cuatro colores, gestiona
+selección/borrado y deshacer/rehacer, y `PDFDocumentProxy.saveDocument()`
+serializa esas anotaciones como anotaciones PDF estándar junto a los valores de
+formulario ya rellenos (mismo flujo de «guardar copia» con confirmación que el
+guardado de formularios). No se usó pdf-lib para no duplicar lógica de selección
+de texto ni de quad points, y porque pdf.js garantiza que lo que se ve en el
+visor es lo que se guarda. Falta: barra de herramientas mínima (herramienta +
+color), comando «Guardar copia con anotaciones» y pruebas.

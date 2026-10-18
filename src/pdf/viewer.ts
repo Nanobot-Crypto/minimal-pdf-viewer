@@ -184,6 +184,15 @@ export class PdfView {
     this.setZoom(Math.max(0.15, this.viewer.currentScale / 1.15));
   }
 
+  /**
+   * Zoom multiplicativo (Ctrl+rueda o pellizco del trackpad) sobre el
+   * documento, con los mismos límites que el zoom por botones.
+   */
+  zoomBy(factor: number): void {
+    const next = Math.min(5, Math.max(0.15, this.viewer.currentScale * factor));
+    if (next !== this.viewer.currentScale) this.setZoom(next);
+  }
+
   rotate(): void {
     this.viewer.pagesRotation = (this.viewer.pagesRotation + 90) % 360;
   }

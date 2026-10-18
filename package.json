@@ -1,6 +1,6 @@
 {
   "name": "vela",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "description": "Vela — visor local de PDF y Markdown (Tauri + pdf.js + CodeMirror)",

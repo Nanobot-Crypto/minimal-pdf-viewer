@@ -343,6 +343,11 @@ export class PdfDocView {
     this.pdf.zoomOut();
   }
 
+  /** Zoom multiplicativo (Ctrl+rueda / pellizco del trackpad) del documento. */
+  zoomBy(factor: number): void {
+    this.pdf.zoomBy(factor);
+  }
+
   rotate(): void {
     this.pdf.rotate();
     this.tab.rotation = this.pdf.getRotation();
