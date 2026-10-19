@@ -202,6 +202,112 @@ fn vela_startup_files(state: tauri::State<'_, StartupFiles>) -> Vec<String> {
     }
 }
 
+/// Capa anti-zoom nativo del webview (solo Linux / WebKitGTK).
+///
+/// El pellizco del trackpad en WebKitGTK puede ampliar TODO el webview (la
+/// interfaz entera) si el motor lo gestiona antes que el JavaScript. Aquí, en
+/// colaboración con `src/ui/zoomGestures.ts`:
+///
+///  1. Se fija el zoom del webview a 1.0 y se repone si cambia (red de
+///     seguridad: la interfaz nunca cambia de tamaño).
+///  2. Se intercepta el gesto de zoom con un `GtkGestureZoom` en fase de
+///     captura, reclamando la secuencia para que WebKitGTK no escale el
+///     webview; el factor se emite como evento `zoom-webview` y el frontend lo
+///     aplica al zoom del PDF (mismos límites que Ctrl+rueda).
+///
+/// El frontend descarta eventos dobles (JS + nativo para el mismo gesto) con
+/// una ventana de 400 ms (ver App.wireNativeZoomBridge).
+#[cfg(target_os = "linux")]
+mod zoom_guard {
+    use std::cell::Cell;
+    use std::time::Duration;
+
+    use gtk::prelude::{EventControllerExt, GestureExt, WidgetExt};
+    use gtk::{EventSequenceState, GestureZoom, PropagationPhase};
+    use tauri::{AppHandle, Emitter, Manager};
+    use webkit2gtk::prelude::WebViewExt;
+
+    #[derive(Clone, serde::Serialize)]
+    struct ZoomEvent {
+        /// Factor multiplicativo a aplicar al zoom del PDF.
+        factor: f64,
+        /// Zoom nativo observado del webview (para el modo diagnóstico).
+        webviewZoom: f64,
+    }
+
+    fn emit_factor(app: &AppHandle, factor: f64, webview_zoom: f64) {
+        if !factor.is_finite() || factor <= 0.0 || (factor - 1.0).abs() < 1e-4 {
+            return;
+        }
+        let _ = app.emit(
+            "zoom-webview",
+            ZoomEvent {
+                factor,
+                webviewZoom: webview_zoom,
+            },
+        );
+    }
+
+    pub fn install(app: AppHandle) {
+        let Some(window) = app.get_webview_window("main") else {
+            return;
+        };
+        let _ = window.with_webview(move |webview| {
+            let wv = webview.inner();
+            // 1. Zoom nativo fijado a 1.0…
+            wv.set_zoom_level(1.0);
+
+            // 2. …y gesto de zoom interceptado antes de que llegue a WebKit.
+            let app_gesture = app.clone();
+            let last_scale = Cell::new(1.0f64);
+            let gesture = GestureZoom::new();
+            gesture.set_propagation_phase(PropagationPhase::Capture);
+            gesture.connect_scale_changed(move |gesture, scale| {
+                // Reclamar la secuencia evita que WebKitGTK amplíe el webview.
+                gesture.set_state(EventSequenceState::CLAIMED);
+                if !scale.is_finite() || scale <= 0.0 {
+                    return;
+                }
+                // La escala es acumulada desde el inicio del gesto; si baja
+                // respecto de la anterior, es un gesto nuevo (base 1.0).
+                let base = if scale + 1e-3 < last_scale.get() {
+                    1.0
+                } else {
+                    last_scale.get()
+                };
+                last_scale.set(scale);
+                emit_factor(&app_gesture, scale / base, scale);
+            });
+            wv.add_controller(&gesture);
+
+            // 3. Red de seguridad: si algo cambió el zoom del webview, se
+            //    repone a 1.0 y se emite el factor correspondiente al PDF.
+            let app_poll = app.clone();
+            let last_zoom = Cell::new(1.0f64);
+            let idle_ticks = Cell::new(0u32);
+            glib::timeout_add_local(Duration::from_millis(250), move || {
+                let z = wv.zoom_level();
+                if (z - 1.0).abs() > 1e-4 {
+                    let base = last_zoom.get();
+                    let factor = if base > 0.0 { z / base } else { z };
+                    last_zoom.set(z);
+                    idle_ticks.set(0);
+                    wv.set_zoom_level(1.0);
+                    emit_factor(&app_poll, factor, z);
+                } else {
+                    // En reposo: el próximo gesto se mide desde 1.0.
+                    let n = idle_ticks.get().saturating_add(1);
+                    idle_ticks.set(n);
+                    if n >= 2 {
+                        last_zoom.set(1.0);
+                    }
+                }
+                glib::ControlFlow::Continue
+            });
+        });
+    }
+}
+
 fn main() {
     let startup: Vec<String> = std::env::args()
         .skip(1)
@@ -210,6 +316,12 @@ fn main() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .setup(|app| {
+            // Capas anti-zoom del pellizco (solo Linux/WebKitGTK).
+            #[cfg(target_os = "linux")]
+            zoom_guard::install(app.handle().clone());
+            Ok(())
+        })
         .manage(StartupFiles(Mutex::new(startup)))
         .invoke_handler(tauri::generate_handler![
             vela_read_file,

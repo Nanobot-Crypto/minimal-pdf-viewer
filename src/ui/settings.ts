@@ -106,6 +106,7 @@ export function openSettingsPanel(host: SettingsHost): void {
       appearanceSection(host, render),
       typographySection(host),
       saveSection(host, render),
+      diagnosticsSection(host),
       shortcutsSection(host, render),
     );
   };
@@ -291,6 +292,31 @@ function saveSection(host: SettingsHost, render: () => void): HTMLElement {
       el('div', { class: 'settings-check-wrap' }, checkbox),
       'Desactivado por defecto. Mientras esté desactivado, los cambios se ' +
         'guardan solo como borrador de recuperación y el archivo original no se toca.',
+    ),
+  );
+}
+
+function diagnosticsSection(host: SettingsHost): HTMLElement {
+  const s = host.getSettings();
+  const checkbox = el('input', {
+    // Clase propia: no debe compartir selector con «Autoguardar» (los tests
+    // preexistentes localizan `.settings-check` como único elemento).
+    class: 'settings-check-zoomdiag',
+    type: 'checkbox',
+    'aria-label': 'Registrar eventos de zoom',
+  }) as HTMLInputElement;
+  checkbox.checked = s.zoomDiagnostics;
+  checkbox.addEventListener('change', () => {
+    host.patchSettings({ zoomDiagnostics: checkbox.checked });
+  });
+  return section(
+    'Diagnóstico',
+    row(
+      'Registrar eventos de zoom',
+      el('div', { class: 'settings-check-wrap' }, checkbox),
+      'Desactivado por defecto. Muestra en pantalla los últimos 20 eventos de ' +
+        'zoom (tipo, Ctrl, deltaY, escala y zoom del webview y del PDF) para ' +
+        'diagnosticar el pellizco del trackpad. Todo permanece en el equipo.',
     ),
   );
 }

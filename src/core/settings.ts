@@ -97,6 +97,12 @@ export interface AppSettings {
   autoSaveToFile: boolean;
   /** Reasignaciones de atajos: id de comando → combo (`null` = sin atajo). */
   shortcutOverrides: ShortcutOverrides;
+  /**
+   * «Registrar eventos de zoom»: modo diagnóstico del pellizco (Tarea A).
+   * DESACTIVADO por defecto; solo muestra en pantalla los últimos eventos de
+   * zoom (nunca sale nada por red).
+   */
+  zoomDiagnostics: boolean;
 }
 
 export function defaultSettings(): AppSettings {
@@ -108,6 +114,7 @@ export function defaultSettings(): AppSettings {
     accent: 'blue',
     autoSaveToFile: false,
     shortcutOverrides: {},
+    zoomDiagnostics: false,
   };
 }
 
@@ -137,6 +144,7 @@ export function normalizeSettings(raw: unknown): AppSettings {
     accent: validAccent(r.accent),
     autoSaveToFile: r.autoSaveToFile === true,
     shortcutOverrides: sanitizeShortcutOverrides(r.shortcutOverrides),
+    zoomDiagnostics: r.zoomDiagnostics === true,
   };
 }
 

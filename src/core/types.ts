@@ -88,4 +88,7 @@ export interface Tab {
   scrollTop: number;
   cursor: number;
   mdMode: MdMode;
+  /** Scroll del editor y de la previsualización (para restaurar al volver). */
+  mdEditorScroll?: number;
+  mdPreviewScroll?: number;
 }

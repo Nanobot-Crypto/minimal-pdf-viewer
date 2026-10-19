@@ -432,6 +432,46 @@ export class MdDocView {
   saveState(): void {
     this.tab.draft = this.text;
     this.tab.cursor = this.editor.getCursor();
+    const scroller = this.root.querySelector('.cm-scroller');
+    if (scroller instanceof HTMLElement) this.tab.mdEditorScroll = scroller.scrollTop;
+    this.tab.mdPreviewScroll = this.preview.scrollTop;
+    this.tab.mdMode = this.mode;
+  }
+
+  /**
+   * Restaura scroll del editor y de la previsualización (y el cursor) al
+   * volver a mostrar la pestaña (Tarea 0). El cursor se recupera sin
+   * desplazar, y luego se reaplica el scroll guardado.
+   */
+  restore(): void {
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        if (this.tab.cursor > 0) {
+          const p = Math.min(this.tab.cursor, this.text.length);
+          this.editor.setCursor(p);
+        }
+        const applyScroll = (): void => {
+          const scroller = this.root.querySelector('.cm-scroller');
+          if (scroller instanceof HTMLElement && this.tab.mdEditorScroll) {
+            scroller.scrollTop = this.tab.mdEditorScroll;
+          }
+          if (this.tab.mdPreviewScroll) this.preview.scrollTop = this.tab.mdPreviewScroll;
+        };
+        applyScroll();
+        // CodeMirror re-mide al volver a ser visible: se reaplica con reintentos
+        // para no quedarse corto si el máximo de scroll cambió.
+        let attempts = 0;
+        const retry = (): void => {
+          applyScroll();
+          attempts += 1;
+          const sc = this.root.querySelector('.cm-scroller');
+          const want = this.tab.mdEditorScroll ?? 0;
+          const got = sc instanceof HTMLElement ? sc.scrollTop : 0;
+          if (want > 0 && Math.abs(got - want) > 1 && attempts < 8) setTimeout(retry, 250);
+        };
+        setTimeout(retry, 150);
+      }),
+    );
   }
 
   dispose(): void {

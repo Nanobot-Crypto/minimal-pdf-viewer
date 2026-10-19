@@ -1,6 +1,6 @@
 /** Aplicación Vela: shell, pestañas, comandos, sesión y coordinación. */
 
-import { bridge, dirName, kindFromName, type Bridge } from './core/bridge';
+import { bridge, dirName, isTauri, kindFromName, type Bridge } from './core/bridge';
 import {
   StatePersistence,
   defaultState,
@@ -54,6 +54,7 @@ import { confirmDialog, confirmDialogEx, infoDialog } from './ui/dialog';
 import { showContextMenu } from './ui/contextMenu';
 import { initTitlebar } from './ui/titlebar';
 import { wireZoomGestures as installZoomGestures, wireZoomHotkeyGuard } from './ui/zoomGestures';
+import { recordZoomEvent, setZoomLogEnabled } from './ui/zoomLog';
 import {
   isSettingsOpen,
   openSettingsPanel,
@@ -106,6 +107,8 @@ export class App implements ViewHost, SettingsHost {
   private loaded = new Map<string, LoadedView>();
   private sidebarSections = new Map<string, (host: HTMLElement) => void>();
   private sidebarViewId = 'auto';
+  /** Sección del panel lateral elegida por pestaña (Tarea 0). */
+  private sidebarViewByTab = new Map<string, string>();
   private palette: CommandPalette;
   private folder: { root: string; entries: DirEntryInfo[] } | null = null;
   /** Notas del usuario, indexadas por documento (almacén local). */
@@ -116,6 +119,10 @@ export class App implements ViewHost, SettingsHost {
   private docStoreTimer: ReturnType<typeof setTimeout> | null = null;
   private fileAutosaveTimer: ReturnType<typeof setTimeout> | null = null;
   private sweepTimer: ReturnType<typeof setInterval> | null = null;
+  /** Último zoom del webview reportado por la capa Rust (null en navegador). */
+  private nativeWebviewZoom: number | null = null;
+  /** Instante del último zoom por JS (para descartar eventos nativos dobles). */
+  private lastJsZoomAt = 0;
 
   // Elementos DOM
   private contentEl!: HTMLElement;
@@ -149,6 +156,7 @@ export class App implements ViewHost, SettingsHost {
     this.notes = parseNotes(await this.b.loadNotes());
     this.docStore = parseDocStore(await this.b.loadDocStore());
     applyAppearance(this.persisted.theme, this.persisted.settings);
+    setZoomLogEnabled(this.persisted.settings.zoomDiagnostics);
     watchSystemTheme(() => {
       if (this.persisted.theme === 'system') applyTheme('system');
       this.refreshActiveTheme();
@@ -341,7 +349,23 @@ export class App implements ViewHost, SettingsHost {
     return this.tabs[this.activeIndex] ?? null;
   }
 
+  /**
+   * Guarda el estado de la vista que está visible antes de desengancharla.
+   * Solo la vista enganchada tiene scroll real: al desatacarla el navegador
+   * resetea el scroll y se perdería (Tarea 0).
+   */
+  private saveAttachedView(): void {
+    for (const v of this.loaded.values()) {
+      const node = v.pdf?.element ?? v.md?.element;
+      if (node?.isConnected) {
+        v.pdf?.saveState();
+        v.md?.saveState();
+      }
+    }
+  }
+
   renderContent(): void {
+    this.saveAttachedView();
     clear(this.contentEl);
     const tab = this.activeTab();
     if (!tab) {
@@ -380,9 +404,12 @@ export class App implements ViewHost, SettingsHost {
     if (view?.pdf) {
       this.contentEl.append(view.pdf.element);
       view.pdf.refreshSidebar();
+      // Restaura página, zoom y scroll cuando la vista ya es visible (Tarea 0).
+      view.pdf.restore();
     } else if (view?.md) {
       this.contentEl.append(view.md.element);
       view.md.refreshSidebar();
+      view.md.restore();
     } else {
       this.contentEl.append(LoadingView(tab.name));
     }
@@ -398,6 +425,7 @@ export class App implements ViewHost, SettingsHost {
       this.renderContent();
       return;
     }
+    this.saveAttachedView();
     clear(this.contentEl);
     const loading = LoadingView(tab.name);
     this.contentEl.append(loading);
@@ -522,6 +550,7 @@ export class App implements ViewHost, SettingsHost {
     view?.pdf?.dispose();
     view?.md?.dispose();
     this.loaded.delete(tab.id);
+    this.sidebarViewByTab.delete(tab.id);
     this.tabs = this.tabs.filter((_, i) => i !== index);
     if (this.activeIndex >= this.tabs.length) this.activeIndex = Math.max(0, this.tabs.length - 1);
     this.renderTabs();
@@ -683,17 +712,21 @@ export class App implements ViewHost, SettingsHost {
 
   private renderSidebar(): void {
     const tab = this.activeTab();
+    // Cada pestaña recuerda su sección del panel lateral (índice, miniaturas…).
+    const saved = tab ? this.sidebarViewByTab.get(tab.id) : undefined;
+    if (saved && this.sidebarSections.has(saved)) this.sidebarViewId = saved;
     const sections = new Map(this.sidebarSections);
     if (this.folder) sections.set('explorer', (host) => this.renderExplorer(host));
     const order =
       tab?.kind === 'pdf'
-        ? ['thumbs', 'outline', 'bookmarks', 'notes']
+        ? ['thumbs', 'outline', 'comments', 'bookmarks', 'notes']
         : tab?.kind === 'md'
           ? ['explorer', 'md-outline', 'md-notes']
           : ['explorer'];
     const labels: Record<string, string> = {
       thumbs: 'Miniaturas',
       outline: 'Índice',
+      comments: 'Comentarios',
       bookmarks: 'Marcadores',
       explorer: 'Explorador',
       'md-outline': 'Esquema',
@@ -710,6 +743,8 @@ export class App implements ViewHost, SettingsHost {
         text: labels[id] ?? id,
         onclick: () => {
           this.sidebarViewId = id;
+          const t = this.activeTab();
+          if (t) this.sidebarViewByTab.set(t.id, id);
           this.renderSidebar();
         },
       });
@@ -920,6 +955,7 @@ export class App implements ViewHost, SettingsHost {
   patchSettings(patch: Partial<AppSettings>): void {
     this.persisted.settings = normalizeSettings({ ...this.persisted.settings, ...patch });
     applyAppearance(this.persisted.theme, this.persisted.settings);
+    setZoomLogEnabled(this.persisted.settings.zoomDiagnostics);
     this.stateChanged();
   }
 
@@ -1111,6 +1147,114 @@ export class App implements ViewHost, SettingsHost {
         run: () => pdfView()?.setZoom('page-fit'),
       },
       {
+        id: 'doc.annSelect',
+        title: 'Anotación: seleccionar / mover',
+        section: 'Anotaciones',
+        enabled: () => isPdf,
+        run: () => pdfView()?.setAnnTool('select'),
+      },
+      {
+        id: 'doc.annHighlight',
+        title: 'Anotación: resaltar',
+        section: 'Anotaciones',
+        enabled: () => isPdf,
+        run: () => pdfView()?.setAnnTool('highlight'),
+      },
+      {
+        id: 'doc.annUnderline',
+        title: 'Anotación: subrayar',
+        section: 'Anotaciones',
+        enabled: () => isPdf,
+        run: () => pdfView()?.setAnnTool('underline'),
+      },
+      {
+        id: 'doc.annStrikeout',
+        title: 'Anotación: tachar',
+        section: 'Anotaciones',
+        enabled: () => isPdf,
+        run: () => pdfView()?.setAnnTool('strikeout'),
+      },
+      {
+        id: 'doc.annDelete',
+        title: 'Borrar la anotación seleccionada',
+        section: 'Anotaciones',
+        enabled: () => isPdf,
+        run: () => pdfView()?.annDelete(),
+      },
+      {
+        id: 'doc.annUndo',
+        title: 'Deshacer anotación',
+        section: 'Anotaciones',
+        enabled: () => isPdf,
+        run: () => pdfView()?.annUndo(),
+      },
+      {
+        id: 'doc.annRedo',
+        title: 'Rehacer anotación',
+        section: 'Anotaciones',
+        enabled: () => isPdf,
+        run: () => pdfView()?.annRedo(),
+      },
+      {
+        id: 'doc.shapeRect',
+        title: 'Forma: rectángulo',
+        section: 'Anotaciones',
+        enabled: () => isPdf,
+        run: () => pdfView()?.setAnnTool('rect'),
+      },
+      {
+        id: 'doc.shapeEllipse',
+        title: 'Forma: elipse',
+        section: 'Anotaciones',
+        enabled: () => isPdf,
+        run: () => pdfView()?.setAnnTool('ellipse'),
+      },
+      {
+        id: 'doc.shapeLine',
+        title: 'Forma: línea',
+        section: 'Anotaciones',
+        enabled: () => isPdf,
+        run: () => pdfView()?.setAnnTool('line'),
+      },
+      {
+        id: 'doc.shapeArrow',
+        title: 'Forma: flecha',
+        section: 'Anotaciones',
+        enabled: () => isPdf,
+        run: () => pdfView()?.setAnnTool('arrow'),
+      },
+      {
+        id: 'doc.annComment',
+        title: 'Comentario (nota adhesiva)',
+        section: 'Anotaciones',
+        enabled: () => isPdf,
+        run: () => pdfView()?.addCommentAt(),
+      },
+      {
+        id: 'doc.signaturePlace',
+        title: 'Firma: colocar…',
+        section: 'Anotaciones',
+        hint: 'Firma visual, sin validez legal',
+        enabled: () => isPdf,
+        run: () => pdfView()?.placeSignature(),
+      },
+      {
+        id: 'doc.signatureDraw',
+        title: 'Firma: dibujar…',
+        section: 'Anotaciones',
+        hint: 'Firma visual, sin validez legal',
+        enabled: () => isPdf,
+        run: () => pdfView()?.drawSignature(),
+      },
+      {
+        id: 'doc.saveAnnotatedCopy',
+        title: 'Guardar copia con anotaciones…',
+        section: 'Anotaciones',
+        hint: this.hintFor('doc.saveAnnotatedCopy'),
+        enabled: () => isPdf,
+        run: () => pdfView()?.saveAnnotatedCopy(),
+      },
+      {
         id: 'doc.rotate',
         title: 'Rotar 90°',
         section: 'Documento',
@@ -1275,9 +1419,10 @@ export class App implements ViewHost, SettingsHost {
   private wireZoomGestures(): void {
     // Ctrl++, Ctrl+- y Ctrl+0: nunca zoom nativo del webview (el zoom del
     // documento lo disparan los comandos doc.zoomIn/Out/Reset registrados).
-    wireZoomHotkeyGuard(window);
+    wireZoomHotkeyGuard(window, (info) => this.logZoom(info));
     installZoomGestures(window, {
       onZoom: (factor) => {
+        this.lastJsZoomAt = Date.now();
         const tab = this.activeTab();
         if (tab?.kind !== 'pdf') return;
         this.loaded.get(tab.id)?.pdf?.zoomBy(factor);
@@ -1288,7 +1433,40 @@ export class App implements ViewHost, SettingsHost {
         const node = target as HTMLElement | null;
         return Boolean(node?.closest?.('.doc-pdf'));
       },
+      onEvent: (info) => this.logZoom(info),
     });
+    this.wireNativeZoomBridge();
+  }
+
+  /** Registro del modo diagnóstico (Ajustes → «Registrar eventos de zoom»). */
+  private logZoom(info: Parameters<typeof recordZoomEvent>[0]): void {
+    const tab = this.activeTab();
+    const pdf = tab?.kind === 'pdf' ? this.loaded.get(tab.id)?.pdf : undefined;
+    recordZoomEvent(info, {
+      webviewZoom: this.nativeWebviewZoom,
+      pdfZoom: pdf ? pdf.getZoom() : null,
+    });
+  }
+
+  /**
+   * Capa Rust (Tauri/WebKitGTK): si un gesto escapa al JS y el webview cambia
+   * de zoom, el lado nativo lo repone a 1.0 y emite `zoom-webview` con el
+   * factor; aquí se aplica al PDF (mismos límites que Ctrl+rueda).
+   */
+  private wireNativeZoomBridge(): void {
+    if (!isTauri) return;
+    void import('@tauri-apps/api/event').then(({ listen }) =>
+      listen<{ factor: number; webviewZoom: number }>('zoom-webview', (e) => {
+        const factor = e.payload?.factor;
+        if (typeof factor !== 'number' || !Number.isFinite(factor)) return;
+        // Mismo gesto visto por JS y por la capa nativa: no aplicarlo dos veces.
+        if (Date.now() - this.lastJsZoomAt < 400) return;
+        this.nativeWebviewZoom = e.payload?.webviewZoom ?? null;
+        const tab = this.activeTab();
+        if (tab?.kind === 'pdf') this.loaded.get(tab.id)?.pdf?.zoomBy(factor);
+        this.logZoom({ type: 'webview', factor });
+      }),
+    );
   }
 
   private wireShortcuts(): void {

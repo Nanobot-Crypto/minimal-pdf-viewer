@@ -1,0 +1,76 @@
+/* Vela — capas anti-zoom de la interfaz (Tarea A: pellizco del trackpad).
+   El zoom SOLO es el del PDF; la interfaz nunca cambia de tamaño. */
+
+/* El motor no debe aplicar zoom táctil (pinch-zoom) en ninguna zona: el
+   gesto lo consumen los listeners de src/ui/zoomGestures.ts. El desplazamiento
+   con un dedo (pan) sigue funcionando. */
+html,
+body,
+#app,
+#main,
+#sidebar,
+#content {
+  touch-action: pan-x pan-y;
+}
+
+/* En el documento PDF el gesto de dos dedos es zoom del PDF (consumido en JS). */
+.pdf-viewer-container,
+.pdf-viewer-container * {
+  touch-action: pan-y;
+}
+
+/* Panel del modo diagnóstico «Registrar eventos de zoom». */
+.zoom-log {
+  position: fixed;
+  right: 12px;
+  bottom: 36px;
+  z-index: 90;
+  max-width: min(560px, calc(100vw - 24px));
+  background: var(--bg-elev);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  font: 11px/1.5 var(--font-mono);
+  color: var(--fg);
+  pointer-events: none;
+  opacity: 0.94;
+}
+
+.zoom-log-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+}
+
+.zoom-log-sub {
+  color: var(--fg-faint);
+  font-weight: 400;
+}
+
+.zoom-log-body {
+  max-height: 220px;
+  overflow: auto;
+  padding: 4px 8px;
+}
+
+.zoom-log-row {
+  display: flex;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.zoom-log-type {
+  min-width: 56px;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* Misma estética que .settings-check, con selector propio. */
+.settings-check-zoomdiag {
+  accent-color: var(--accent);
+  width: 16px;
+  height: 16px;
+}

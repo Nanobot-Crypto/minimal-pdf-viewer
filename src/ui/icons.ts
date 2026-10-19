@@ -42,6 +42,20 @@ export const icons = {
   winClose: `<svg ${S}><path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/></svg>`,
   // Ajustes (controles deslizantes: distinto del icono de tema).
   settings: `<svg ${S}><path d="M2 4.5h4M10 4.5h4M2 11.5h4M10 11.5h4"/><circle cx="8" cy="4.5" r="1.9"/><circle cx="8" cy="11.5" r="1.9"/></svg>`,
+  // Anotaciones de texto (Tarea B)
+  pointer: `<svg ${S}><path d="M4.5 2.5 11.5 8l-3.2.7L9.8 12.7 8 13.4 6.6 9.4 4.5 11z"/></svg>`,
+  highlight: `<svg ${S}><rect x="2.5" y="10" width="11" height="3.5" rx="1"/><path d="M4.5 8 9.5 2.8 12.5 5.7 7.5 10.8H4.5z"/></svg>`,
+  underline: `<svg ${S}><path d="M4.5 2.8v4.7a3.5 3.5 0 0 0 7 0V2.8"/><path d="M3.5 13.2h9"/></svg>`,
+  strikeout: `<svg ${S}><path d="M2.8 8h10.4"/><path d="M11 5c-.4-1.4-1.6-2.3-3-2.3-1.7 0-3 1-3 2.4M5 11c.4 1.4 1.6 2.3 3 2.3 1.7 0 3-1 3-2.4"/></svg>`,
+  trash: `<svg ${S}><path d="M3.5 4.5h9M6.5 4.5V3h3v1.5M5 4.5l.6 8.5h4.8l.6-8.5"/></svg>`,
+  undo: `<svg ${S}><path d="M6 4 3 7l3 3"/><path d="M3 7h6a3.5 3.5 0 0 1 0 7H7"/></svg>`,
+  redo: `<svg ${S}><path d="M10 4l3 3-3 3"/><path d="M13 7H7a3.5 3.5 0 0 0 0 7h2"/></svg>`,
+  shapeRect: `<svg ${S}><rect x="2.5" y="4" width="11" height="8"/></svg>`,
+  shapeEllipse: `<svg ${S}><ellipse cx="8" cy="8" rx="5.5" ry="4"/></svg>`,
+  shapeLine: `<svg ${S}><path d="M3 13L13 3"/></svg>`,
+  shapeArrow: `<svg ${S}><path d="M3 13L13 3"/><path d="M8 3h5v5"/></svg>`,
+  comment: `<svg ${S}><path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z"/></svg>`,
+  pen: `<svg ${S}><path d="M11.2 2.8l2 2L6 12H4v-2z"/><path d="M9.5 4.5l2 2M3 14h10"/></svg>`,
 };
 
 export function icon(name: keyof typeof icons): SVGElement {

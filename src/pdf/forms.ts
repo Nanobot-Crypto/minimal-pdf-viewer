@@ -58,6 +58,23 @@ export async function hasFormFields(doc: PDFDocumentProxy): Promise<boolean> {
 }
 
 /**
+ * Valores rellenos actualmente en el visor (`annotationStorage` de pdf.js),
+ * con el nombre de campo para poder copiarlos a una copia con pdf-lib.
+ */
+export async function collectFormValues(doc: PDFDocumentProxy): Promise<{
+  id: string;
+  fieldName: string;
+  type: string;
+  value: unknown;
+}[]> {
+  const fields = await listFormFields(doc);
+  const storage = doc.annotationStorage.getAll() as Record<string, unknown>;
+  return fields
+    .filter((f) => storage[f.id] !== undefined)
+    .map((f) => ({ id: f.id, fieldName: f.fieldName, type: f.type, value: storage[f.id] }));
+}
+
+/**
  * Serializa el documento con los valores del `annotationStorage` de pdf.js.
  * El resultado es un PDF completo e independiente (copia rellenada).
  */

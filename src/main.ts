@@ -1,4 +1,5 @@
 import './styles/base.css';
+import './styles/zoom.css';
 import './styles/pdf.css';
 import './styles/md.css';
 import { App } from './app';

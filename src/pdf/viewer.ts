@@ -138,6 +138,33 @@ export class PdfView {
     return this.doc;
   }
 
+  /**
+   * Geometría de una página (índice 0-based) para las anotaciones:
+   * elemento DOM y transformaciones viewport ⇄ espacio PDF.
+   */
+  getPageGeom(pageIndex: number): {
+    element: HTMLElement;
+    toPdf: (x: number, y: number) => [number, number];
+    toViewport: (x: number, y: number) => [number, number];
+  } | null {
+    const pv = this.viewer.getPageView?.(pageIndex) as
+      | { div?: HTMLElement; viewport?: { convertToPdfPoint(x: number, y: number): number[]; convertToViewportPoint(x: number, y: number): number[] } }
+      | undefined;
+    if (!pv?.div || !pv.viewport) return null;
+    const vp = pv.viewport;
+    return {
+      element: pv.div,
+      toPdf: (x, y) => {
+        const p = vp.convertToPdfPoint(x, y);
+        return [p[0], p[1]];
+      },
+      toViewport: (x, y) => {
+        const p = vp.convertToViewportPoint(x, y);
+        return [p[0], p[1]];
+      },
+    };
+  }
+
   getPage(): number {
     return this.viewer.currentPageNumber;
   }
