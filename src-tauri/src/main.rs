@@ -222,10 +222,10 @@ mod zoom_guard {
     use std::cell::Cell;
     use std::time::Duration;
 
-    use gtk::prelude::{EventControllerExt, GestureExt, WidgetExt};
+    use gtk::prelude::{EventControllerExt, GestureExt};
     use gtk::{EventSequenceState, GestureZoom, PropagationPhase};
     use tauri::{AppHandle, Emitter, Manager};
-    use webkit2gtk::prelude::WebViewExt;
+    use webkit2gtk::WebViewExt;
 
     #[derive(Clone, serde::Serialize)]
     struct ZoomEvent {
@@ -260,25 +260,27 @@ mod zoom_guard {
             // 2. …y gesto de zoom interceptado antes de que llegue a WebKit.
             let app_gesture = app.clone();
             let last_scale = Cell::new(1.0f64);
-            let gesture = GestureZoom::new();
-            gesture.set_propagation_phase(PropagationPhase::Capture);
-            gesture.connect_scale_changed(move |gesture, scale| {
-                // Reclamar la secuencia evita que WebKitGTK amplíe el webview.
-                gesture.set_state(EventSequenceState::CLAIMED);
-                if !scale.is_finite() || scale <= 0.0 {
-                    return;
-                }
-                // La escala es acumulada desde el inicio del gesto; si baja
-                // respecto de la anterior, es un gesto nuevo (base 1.0).
-                let base = if scale + 1e-3 < last_scale.get() {
-                    1.0
-                } else {
-                    last_scale.get()
-                };
-                last_scale.set(scale);
-                emit_factor(&app_gesture, scale / base, scale);
-            });
-            wv.add_controller(&gesture);
+            let gesture = GestureZoom::new(&wv);
+gesture.set_propagation_phase(gtk::PropagationPhase::Capture);
+
+gesture.connect_scale_changed(move |gesture, scale| {
+    // Reclamar la secuencia evita que WebKitGTK amplíe el webview.
+    gesture.set_state(EventSequenceState::Claimed);
+    if !scale.is_finite() || scale <= 0.0 {
+        return;
+    }
+    // La escala es acumulada desde el inicio del gesto; si baja
+    // respecto de la anterior, es un gesto nuevo (base 1.0).
+    let base = if scale + 1e-3 < last_scale.get() {
+        1.0
+    } else {
+        last_scale.get()
+    };
+    last_scale.set(scale);
+    emit_factor(&app_gesture, scale / base, scale);
+});
+
+std::mem::forget(gesture);
 
             // 3. Red de seguridad: si algo cambió el zoom del webview, se
             //    repone a 1.0 y se emite el factor correspondiente al PDF.
